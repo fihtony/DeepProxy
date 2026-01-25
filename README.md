@@ -8,7 +8,7 @@ A lightweight HTTP proxy system for mobile application development and testing. 
 - ▶️ **Replay Mode**: Return cached responses without calling backend (offline development)
 - ➡️ **Passthrough Mode**: Forward all requests without caching
 - **Smart Session Management**: Automatic user session and OAuth token handling
-- **Web UI Dashboard**: Manage cache, view statistics, configure endpoints (http://localhost:3000)
+- **Web UI Dashboard**: Manage cache, view statistics, configure endpoints (http://localhost:3080)
 - **Database-Driven Config**: All settings managed via Web UI, not configuration files
 - **Security**: AES-256-GCM encryption, API key authentication, rate limiting
 
@@ -23,7 +23,7 @@ A lightweight HTTP proxy system for mobile application development and testing. 
 
 ```bash
 # Clone and install
-git clone <repository-url>
+git clone https://github.com/fihtony/DeepProxy.git
 cd DeepProxy
 
 # Install dependencies
@@ -58,7 +58,7 @@ npm start
 Access the proxy at:
 
 - **Proxy Server**: http://localhost:8080
-- **Web UI Dashboard**: http://localhost:3000
+- **Web UI Dashboard**: http://localhost:3080
 - **Admin API**: http://localhost:8080/admin
 
 ## Usage
@@ -83,7 +83,7 @@ let baseURL = "http://localhost:8080/api/"
 
 **Via Web UI** (Recommended):
 
-1. Navigate to http://localhost:3000
+1. Navigate to http://localhost:3080
 2. Click mode toggle (Recording → Replay → Passthrough)
 
 **Via API**:
