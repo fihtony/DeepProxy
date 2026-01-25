@@ -51,6 +51,10 @@ certs/
 *.key
 *.crt
 
+# Tests
+tests/
+docs/
+
 # Backups
 backups/
 *.backup
