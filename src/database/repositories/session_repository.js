@@ -123,6 +123,8 @@ function getSessionByToken(sessionToken) {
     const db = dbConnection.getDatabase();
 
     // Direct SQL query - session tokens are plain UUIDs, no encryption
+    // Note: expires_at is stored in ISO format with timezone offset (e.g., "2026-01-15T23:22:35-05:00")
+    // We need to convert to UTC for proper comparison with CURRENT_TIMESTAMP
     const stmt = db.prepare(`
       SELECT 
         id,
@@ -137,7 +139,7 @@ function getSessionByToken(sessionToken) {
         created_at,
         last_activity_at
       FROM sessions
-      WHERE p_session = ? AND expires_at > CURRENT_TIMESTAMP
+      WHERE p_session = ? AND datetime(expires_at) > datetime('now')
       LIMIT 1
     `);
 
@@ -162,7 +164,7 @@ function getSessionsByUserId(userId, activeOnly = false) {
 
     let whereClause = "WHERE user_id = ?";
     if (activeOnly) {
-      whereClause += " AND expires_at > CURRENT_TIMESTAMP";
+      whereClause += " AND datetime(expires_at) > datetime('now')";
     }
 
     const stmt = db.prepare(`
@@ -345,7 +347,7 @@ function getSessionCount(userId, activeOnly = false) {
 
     let whereClause = "WHERE user_id = ?";
     if (activeOnly) {
-      whereClause += " AND expires_at > CURRENT_TIMESTAMP";
+      whereClause += " AND datetime(expires_at) > datetime('now')";
     }
 
     const stmt = db.prepare(`SELECT COUNT(*) as count FROM sessions ${whereClause}`);
@@ -523,7 +525,7 @@ function getSessionBySessionHash(sessionHash) {
         created_at,
         last_activity_at
       FROM sessions
-      WHERE us_hash IS NOT NULL AND expires_at > CURRENT_TIMESTAMP
+      WHERE us_hash IS NOT NULL AND datetime(expires_at) > datetime('now')
       ORDER BY last_activity_at DESC
     `);
 
@@ -586,7 +588,7 @@ function getSessionByOAuthHash(oauthHash) {
         created_at,
         last_activity_at
       FROM sessions
-      WHERE oauth_hash IS NOT NULL AND expires_at > CURRENT_TIMESTAMP
+      WHERE oauth_hash IS NOT NULL AND datetime(expires_at) > datetime('now')
       ORDER BY last_activity_at DESC
     `);
 

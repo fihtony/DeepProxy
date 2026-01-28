@@ -75,9 +75,13 @@ function createSessionAndCookie(userId, headers, logPrefix = "[SESSION_MANAGER]"
       userId,
       sessionId: session.id,
       sessionToken: sessionToken.substring(0, 12) + "...",
+      tokenLength: sessionToken.length,
+      tokenStored: session.p_session ? session.p_session.substring(0, 12) + "..." : "NOT SET",
+      tokenMatch: sessionToken === session.p_session,
       domains,
       cookieCount: cookieHeaders.length,
       expirySeconds,
+      cookieHeaderSample: cookieHeaders[0] ? cookieHeaders[0].substring(0, 80) + "..." : "NO COOKIES",
     });
 
     return {
@@ -111,29 +115,39 @@ function getUserIdFromDPSession(headers, logPrefix = "[SESSION_MANAGER]") {
     }
 
     const sessionToken = sessionTokenMatch[1];
+    const tokenPrefix = sessionToken.substring(0, 12) + "...";
     logger.info(`${logPrefix} DPSESSION cookie found in request`, {
-      sessionToken: sessionToken.substring(0, 12) + "...",
+      sessionToken: tokenPrefix,
+      fullTokenLength: sessionToken.length,
     });
 
     // Lookup session in database
     const session = sessionRepository.getSessionByToken(sessionToken);
 
     if (!session) {
-      logger.warn(`${logPrefix} Session not found for DPSESSION token`, {
-        sessionToken: sessionToken.substring(0, 12) + "...",
-      });
+      logger.error(
+        `${logPrefix} Session not found for DPSESSION token - possible causes: token mismatch, session expired, or cookie not properly stored`,
+        {
+          sessionToken: tokenPrefix,
+          tokenLength: sessionToken.length,
+          cookieHeaderLength: cookieHeader.length,
+          firstFewCookies: cookieHeader.substring(0, 100),
+        }
+      );
       return null;
     }
 
     logger.info(`${logPrefix} User ID retrieved from DPSESSION`, {
-      sessionToken: sessionToken.substring(0, 12) + "...",
+      sessionToken: tokenPrefix,
       userId: session.user_id,
+      expiresAt: session.expires_at,
     });
 
     return session.user_id;
   } catch (error) {
     logger.error(`${logPrefix} Failed to extract user ID from DPSESSION`, {
       error: error.message,
+      stack: error.stack,
     });
     return null;
   }
@@ -551,8 +565,17 @@ function getUserIdFromRequestWithConfig(headers, logPrefix = "[SESSION_MANAGER]"
           userId: session.user_id,
         });
         return session.user_id;
+      } else {
+        logger.debug(`${logPrefix} Bearer token found but not matched in session repository`, {
+          tokenPrefix: bearerToken.substring(0, 20) + "...",
+          hashPrefix: oauthHash.substring(0, 12) + "...",
+        });
       }
+    } else {
+      logger.debug(`${logPrefix} No Bearer token found in authorization header`);
     }
+  } else {
+    logger.debug(`${logPrefix} Session config not available, skipping config-based lookups`);
   }
 
   // 4. Fall back to legacy lookup (User Session, Bearer token)
@@ -568,7 +591,11 @@ function getUserIdFromRequestWithConfig(headers, logPrefix = "[SESSION_MANAGER]"
     return userId;
   }
 
-  logger.debug(`${logPrefix} No user ID found from any authentication method`);
+  logger.debug(`${logPrefix} No user ID found from any authentication method`, {
+    hasCookie: !!headers.cookie,
+    hasAuthorization: !!headers.authorization,
+    cookieLength: headers.cookie ? headers.cookie.length : 0,
+  });
   return null;
 }
 
@@ -1200,33 +1227,6 @@ function getSessionInfoFromRequest(headers, logPrefix = "[SESSION_MANAGER]") {
 
   logger.debug(`${logPrefix} No session info found from any authentication method`);
   return { userId: null, sessionId: null, sessionToken: null, authMethod: null };
-}
-
-/**
- * Get user ID from request using config-aware lookup
- * Wrapper around getSessionInfoFromRequest that returns only userId
- *
- * @param {Object} headers - Request headers
- * @param {string} logPrefix - Log prefix
- * @returns {number|null} User ID or null
- */
-function getUserIdFromRequestWithConfig(headers, logPrefix = "[SESSION_MANAGER]") {
-  try {
-    const sessionInfo = getSessionInfoFromRequest(headers, logPrefix);
-    if (sessionInfo?.userId) {
-      logger.debug(`${logPrefix} User ID found via config-aware lookup`, {
-        userId: sessionInfo.userId,
-        authMethod: sessionInfo.authMethod,
-      });
-      return sessionInfo.userId;
-    }
-    return null;
-  } catch (error) {
-    logger.error(`${logPrefix} Failed to get user ID from request with config`, {
-      error: error.message,
-    });
-    return null;
-  }
 }
 
 module.exports = {

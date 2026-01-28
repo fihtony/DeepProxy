@@ -52,6 +52,7 @@ import {
   selectEndpointsError,
 } from "../store/slices/endpointSlice";
 import MethodTag from "../components/MethodTag";
+import { getProxyConfig } from "../services/settingsService";
 
 const EndpointManagement = () => {
   const dispatch = useDispatch();
@@ -59,6 +60,14 @@ const EndpointManagement = () => {
   const availableEndpoints = useSelector(selectAvailableEndpoints);
   const loading = useSelector(selectEndpointsLoading);
   const error = useSelector(selectEndpointsError);
+
+  // Default matching settings from proxy config
+  const [replayDefaults, setReplayDefaults] = useState({
+    match_version: 0, // 0 = Closest, 1 = Exact
+    match_platform: 1, // 0 = Any, 1 = Exact
+    match_environment: "exact",
+    match_language: 1, // 0 = Any, 1 = Exact
+  });
 
   // Extract unique methods from available endpoints
   const availableMethods = useMemo(() => {
@@ -96,6 +105,17 @@ const EndpointManagement = () => {
       initializedRef.current = true;
       dispatch(fetchConfigs());
       dispatch(fetchAvailableEndpoints());
+
+      // Load proxy config for default matching settings
+      getProxyConfig()
+        .then((res) => {
+          if (res.success && res.data?.replayDefaults) {
+            setReplayDefaults(res.data.replayDefaults);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load proxy config:", err);
+        });
     }
   }, [dispatch]);
 
@@ -147,17 +167,19 @@ const EndpointManagement = () => {
         type: configType,
       });
     } else {
-      // Adding new config
+      // Adding new config - use defaults from proxy config for replay rules
       setDialogType(ruleType);
       setSelectedConfig(null);
+      const isRecording = ruleType === "recording";
       setFormData({
         http_method: "",
         endpoint_pattern: "",
         match_query_params: "",
-        match_version: ruleType === "recording" ? true : false, // Default to Exact for recording
-        match_language: true,
-        match_platform: true,
-        match_environment: "exact",
+        // For recording: always Exact (true). For replay: use proxy config defaults
+        match_version: isRecording ? true : replayDefaults.match_version === 1,
+        match_language: isRecording ? true : replayDefaults.match_language === 1,
+        match_platform: isRecording ? true : replayDefaults.match_platform === 1,
+        match_environment: isRecording ? "exact" : replayDefaults.match_environment,
         match_headers: "",
         match_body: "",
         match_response_status: "2xx",

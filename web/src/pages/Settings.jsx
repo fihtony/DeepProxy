@@ -29,6 +29,9 @@ import {
   ListItem,
   ListItemIcon,
   ListItemText,
+  Card,
+  CardContent,
+  Grid,
 } from "@mui/material";
 import {
   Save as SaveIcon,
@@ -45,6 +48,12 @@ import {
   FileUpload as ImportIcon,
   CheckCircle as CheckCircleIcon,
   Warning as WarningIcon,
+  Settings as SettingsIcon,
+  Security as SecurityIcon,
+  Android as AndroidIcon,
+  Apple as AppleIcon,
+  Computer as ComputerIcon,
+  Download as DownloadIcon,
 } from "@mui/icons-material";
 
 import { HeaderMappingField, DomainListField, EndpointTypeField, TagField } from "../components/SettingsFields";
@@ -62,6 +71,10 @@ import {
   deleteSessionConfig,
   exportAllConfigs,
   importConfigs,
+  getProxyConfig,
+  updateProxyConfig,
+  getCaCertInfo,
+  getCaCertDownloadUrl,
 } from "../services/settingsService";
 import { setEndpointConfig as setEndpointConfigRedux } from "../store/slices/configSlice";
 
@@ -188,6 +201,7 @@ function Settings() {
   const [originalMappingConfig, setOriginalMappingConfig] = useState(null);
   const [originalEndpointConfig, setOriginalEndpointConfig] = useState(null);
   const [originalSessionConfig, setOriginalSessionConfig] = useState(null);
+  const [originalProxyConfig, setOriginalProxyConfig] = useState(null);
 
   // Traffic config state
   const [trafficConfig, setTrafficConfig] = useState({
@@ -203,12 +217,33 @@ function Settings() {
   });
   const [hasSessionConfig, setHasSessionConfig] = useState(false);
 
+  // Proxy config state
+  const [proxyConfig, setProxyConfig] = useState({
+    replayDefaults: {
+      match_version: 0, // 0 = Closest, 1 = Exact
+      match_platform: 1, // 0 = Any, 1 = Exact
+      match_environment: "exact",
+      match_language: 1, // 0 = Any, 1 = Exact
+    },
+    recordingDefaults: {
+      match_version: 1,
+      match_platform: 1,
+      match_environment: "exact",
+      match_language: 1,
+    },
+  });
+  const [caCertInfo, setCaCertInfo] = useState({ exists: false });
+
   // Import/Export state
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importData, setImportData] = useState(null);
   const [importConflicts, setImportConflicts] = useState(null);
+
+  // Endpoint pattern input state
+  const [newEndpointPattern, setNewEndpointPattern] = useState("");
+  const [patternError, setPatternError] = useState("");
 
   // Mapping config state
   const [mappingConfig, setMappingConfig] = useState({
@@ -257,15 +292,22 @@ function Settings() {
     return !deepEqual(sessionConfig, originalSessionConfig);
   }, [sessionConfig, originalSessionConfig]);
 
+  const proxyChanged = useMemo(() => {
+    if (!originalProxyConfig) return false;
+    return !deepEqual(proxyConfig, originalProxyConfig);
+  }, [proxyConfig, originalProxyConfig]);
+
   // Load initial data
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [trafficRes, mappingRes, endpointRes, sessionRes] = await Promise.all([
+      const [trafficRes, mappingRes, endpointRes, sessionRes, proxyRes, caCertRes] = await Promise.all([
         getTrafficConfig(),
         getMappingConfig(),
         getEndpointConfig(),
         getSessionConfig(),
+        getProxyConfig(),
+        getCaCertInfo(),
       ]);
 
       if (trafficRes.success && trafficRes.data) {
@@ -303,6 +345,22 @@ function Settings() {
         setSessionConfig(emptySession);
         setOriginalSessionConfig(null);
         setHasSessionConfig(false);
+      }
+
+      if (proxyRes.success && proxyRes.data) {
+        setProxyConfig(proxyRes.data);
+        setOriginalProxyConfig(proxyRes.data);
+      } else {
+        const defaultProxy = {
+          replayDefaults: { match_version: 0, match_platform: 1, match_environment: "exact", match_language: 1, match_endpoint: [] },
+          recordingDefaults: { match_version: 1, match_platform: 1, match_environment: "exact", match_language: 1, match_endpoint: [] },
+        };
+        setProxyConfig(defaultProxy);
+        setOriginalProxyConfig(defaultProxy);
+      }
+
+      if (caCertRes.success && caCertRes.data) {
+        setCaCertInfo(caCertRes.data);
       }
     } catch (error) {
       console.error("Failed to load settings:", error);
@@ -438,6 +496,7 @@ function Settings() {
       mapping: "Field Mapping",
       endpoint: "Endpoint Types",
       session: "Session Management",
+      proxy: "Proxy Config",
     };
     return names[type] || type;
   };
@@ -600,6 +659,76 @@ function Settings() {
     }
   };
 
+  // Proxy config handlers
+  const handleSaveProxy = async () => {
+    setSaving(true);
+    try {
+      const res = await updateProxyConfig(proxyConfig);
+      if (res.success) {
+        setProxyConfig(res.data);
+        setOriginalProxyConfig(res.data);
+        setSnackbar({ open: true, message: "Proxy configuration saved successfully", severity: "success" });
+      }
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: "Failed to save: " + (error.response?.data?.error || error.message),
+        severity: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReplayDefaultChange = (field, value) => {
+    setProxyConfig({
+      ...proxyConfig,
+      replayDefaults: {
+        ...proxyConfig.replayDefaults,
+        [field]: value,
+      },
+    });
+  };
+
+  const handleAddEndpointPattern = () => {
+    if (!newEndpointPattern.trim()) {
+      setPatternError("Pattern cannot be empty");
+      return;
+    }
+
+    // Validate regex pattern
+    try {
+      new RegExp(newEndpointPattern, "i");
+      setPatternError("");
+    } catch (err) {
+      setPatternError(`Invalid regex pattern: ${err.message}`);
+      return;
+    }
+
+    // Store pattern as-is (no conversion needed)
+    const pattern = newEndpointPattern;
+
+    const currentPatterns = proxyConfig.replayDefaults?.match_endpoint || [];
+    if (currentPatterns.includes(pattern)) {
+      setPatternError("This pattern already exists");
+      return;
+    }
+
+    handleReplayDefaultChange("match_endpoint", [...currentPatterns, pattern]);
+    setNewEndpointPattern("");
+    setPatternError("");
+  };
+
+  const handleRemoveEndpointPattern = (index) => {
+    const currentPatterns = proxyConfig.replayDefaults?.match_endpoint || [];
+    const newPatterns = currentPatterns.filter((_, i) => i !== index);
+    handleReplayDefaultChange("match_endpoint", newPatterns);
+  };
+
+  const handleDownloadCaCert = () => {
+    window.open(getCaCertDownloadUrl(), "_blank");
+  };
+
   // Session rule helpers
   const handleAddCreateRule = () => {
     setSessionConfig({
@@ -726,6 +855,7 @@ function Settings() {
             <Tab icon={<MappingIcon />} iconPosition="start" label="Field Mapping" />
             <Tab icon={<EndpointIcon />} iconPosition="start" label="Endpoint Types" />
             <Tab icon={<SessionIcon />} iconPosition="start" label="Session Management" />
+            <Tab icon={<SettingsIcon />} iconPosition="start" label="Proxy Config" />
           </Tabs>
         </Box>
 
@@ -1061,6 +1191,370 @@ function Settings() {
                 {saving ? "Saving..." : "Save Session Config"}
               </Button>
             </Box>
+          </Box>
+        </TabPanel>
+
+        {/* Proxy Config Tab */}
+        <TabPanel value={activeTab} index={4}>
+          <Box sx={{ p: 2 }}>
+            {/* Default Matching Settings - MOVED TO TOP */}
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Default Matching Settings
+            </Typography>
+
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Configure default matching criteria used when no endpoint-specific rule is defined. These defaults also apply as initial
+              values when creating new rules in the Endpoint Rules page.
+            </Alert>
+
+            {/* REPLAY Mode Defaults */}
+            <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
+                <TestIcon sx={{ color: "#1976d2" }} />
+                REPLAY Mode Defaults
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Used when finding matching recorded responses in REPLAY mode.
+              </Typography>
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Version Matching</InputLabel>
+                    <Select
+                      value={proxyConfig.replayDefaults?.match_version ?? 0}
+                      label="Version Matching"
+                      onChange={(e) => handleReplayDefaultChange("match_version", e.target.value)}
+                    >
+                      <MenuItem value={0}>Closest</MenuItem>
+                      <MenuItem value={1}>Exact</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Platform Matching</InputLabel>
+                    <Select
+                      value={proxyConfig.replayDefaults?.match_platform ?? 1}
+                      label="Platform Matching"
+                      onChange={(e) => handleReplayDefaultChange("match_platform", e.target.value)}
+                    >
+                      <MenuItem value={1}>Exact</MenuItem>
+                      <MenuItem value={0}>Any</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Environment Matching</InputLabel>
+                    <Select
+                      value={proxyConfig.replayDefaults?.match_environment ?? "exact"}
+                      label="Environment Matching"
+                      onChange={(e) => handleReplayDefaultChange("match_environment", e.target.value)}
+                    >
+                      <MenuItem value="exact">Exact</MenuItem>
+                      <MenuItem value="dev">Dev</MenuItem>
+                      <MenuItem value="sit">Sit</MenuItem>
+                      <MenuItem value="stage">Stage</MenuItem>
+                      <MenuItem value="prod">Prod</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Language Matching</InputLabel>
+                    <Select
+                      value={proxyConfig.replayDefaults?.match_language ?? 1}
+                      label="Language Matching"
+                      onChange={(e) => handleReplayDefaultChange("match_language", e.target.value)}
+                    >
+                      <MenuItem value={1}>Exact</MenuItem>
+                      <MenuItem value={0}>Any</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+
+              {/* Endpoint Patterns Section */}
+              <Box sx={{ mt: 3, pt: 3, borderTop: "1px solid #e0e0e0" }}>
+                <Typography variant="h6" sx={{ mb: 2 }}>
+                  Endpoint Matching Patterns
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Configure regex patterns for fuzzy endpoint matching.
+                  <br />
+                  <strong>
+                    <code>.*/services-([AB])/.*</code>
+                  </strong>{" "}
+                  - matches "/services-A/" or "/services-B/" in the endpoint path
+                  <br />
+                  <strong>
+                    <code>.*/myservice/(\d)\.(\d)/.*</code>
+                  </strong>{" "}
+                  - matches version patterns like "/myservice/1.0/", "/myservice/2.2/" in the endpoint path
+                </Typography>
+
+                {/* Patterns displayed as Chips - same style as EndpointTypeField */}
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2 }}>
+                  {(proxyConfig.replayDefaults?.match_endpoint || []).length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" fontStyle="italic">
+                      No patterns defined
+                    </Typography>
+                  ) : (
+                    (proxyConfig.replayDefaults?.match_endpoint || []).map((pattern, index) => (
+                      <Chip
+                        key={index}
+                        label={pattern}
+                        onDelete={() => handleRemoveEndpointPattern(index)}
+                        variant="outlined"
+                        size="small"
+                      />
+                    ))
+                  )}
+                </Box>
+
+                {/* Pattern Input and Add Button - same style as EndpointTypeField */}
+                <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+                  <TextField
+                    label="Add Pattern (Regex)"
+                    size="small"
+                    value={newEndpointPattern}
+                    onChange={(e) => {
+                      setNewEndpointPattern(e.target.value);
+                      if (patternError) setPatternError("");
+                    }}
+                    placeholder="e.g., .*/myservices-(\d)/.*"
+                    sx={{ flexGrow: 1 }}
+                    error={!!patternError}
+                    helperText={patternError}
+                    onKeyPress={(e) => e.key === "Enter" && handleAddEndpointPattern()}
+                  />
+                  <Box sx={{ pt: 0.5 }}>
+                    <Chip
+                      label="Add"
+                      color="primary"
+                      onClick={handleAddEndpointPattern}
+                      disabled={!newEndpointPattern.trim() || !!patternError}
+                      clickable
+                    />
+                  </Box>
+                </Box>
+              </Box>
+            </Paper>
+
+            {/* RECORDING Mode Defaults (Read-only) */}
+            <Paper variant="outlined" sx={{ p: 2, mb: 3, backgroundColor: "#fafafa" }}>
+              <Typography
+                variant="subtitle1"
+                fontWeight="bold"
+                sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1, color: "text.secondary" }}
+              >
+                <Chip label="Read Only" size="small" sx={{ mr: 1 }} />
+                RECORDING Mode Defaults
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Used when capturing requests in RECORDING mode. These settings cannot be changed currently.
+              </Typography>
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small" disabled>
+                    <InputLabel>Version Matching</InputLabel>
+                    <Select value={1} label="Version Matching">
+                      <MenuItem value={1}>Exact</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small" disabled>
+                    <InputLabel>Platform Matching</InputLabel>
+                    <Select value={1} label="Platform Matching">
+                      <MenuItem value={1}>Exact</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small" disabled>
+                    <InputLabel>Environment Matching</InputLabel>
+                    <Select value="exact" label="Environment Matching">
+                      <MenuItem value="exact">Exact</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small" disabled>
+                    <InputLabel>Language Matching</InputLabel>
+                    <Select value={1} label="Language Matching">
+                      <MenuItem value={1}>Exact</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+
+              {/* Endpoint Patterns Section - Read Only */}
+              <Box sx={{ mt: 3, pt: 3, borderTop: "1px solid #e0e0e0" }}>
+                <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1, color: "text.secondary" }}>
+                  Endpoint Matching Patterns
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Endpoint matching patterns cannot be configured for RECORDING mode. RECORDING always uses exact endpoint path matching.
+                </Typography>
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#f5f5f5",
+                  }}
+                >
+                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                    Not configurable - RECORDING mode always uses exact match
+                  </Typography>
+                </Paper>
+              </Box>
+            </Paper>
+
+            {/* Save Button */}
+            <Box sx={{ display: "flex", gap: 2, mb: 3, justifyContent: "flex-end" }}>
+              <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveProxy} disabled={saving || !proxyChanged}>
+                {saving ? "Saving..." : "Save Proxy Config"}
+              </Button>
+            </Box>
+
+            <Divider sx={{ my: 3 }} />
+
+            {/* CA Certificate Section */}
+            <Typography variant="h6" sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
+              <SecurityIcon color="primary" />
+              CA Certificate
+            </Typography>
+
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Download the CA certificate to enable HTTPS traffic interception. Install this certificate on your device to allow Deep Proxy
+              to decrypt and inspect HTTPS traffic.
+            </Alert>
+
+            <Card variant="outlined" sx={{ mb: 3 }}>
+              <CardContent>
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      Deep Proxy CA Certificate
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {caCertInfo.exists ? `File: ${caCertInfo.fileName} (${caCertInfo.size} bytes)` : "Certificate not available"}
+                    </Typography>
+                  </Box>
+                  <Button variant="contained" startIcon={<DownloadIcon />} onClick={handleDownloadCaCert} disabled={!caCertInfo.exists}>
+                    Download Certificate
+                  </Button>
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Setup Guides - Collapsible */}
+            <Accordion>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="h6">Setup Guides</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Box sx={{ width: "100%" }}>
+                  <Grid container spacing={2} sx={{ mt: 0 }}>
+                    {/* Android Setup */}
+                    <Grid item xs={12} md={4}>
+                      <Card variant="outlined" sx={{ height: "100%" }}>
+                        <CardContent>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+                            <AndroidIcon sx={{ color: "#3DDC84" }} />
+                            <Typography variant="subtitle1" fontWeight="bold">
+                              Android
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            For Android devices and emulators:
+                          </Typography>
+                          <ol style={{ paddingLeft: "1.2em", margin: 0, fontSize: "0.875rem" }}>
+                            <li>Download the CA certificate</li>
+                            <li>Go to Settings → Security → Encryption & credentials</li>
+                            <li>Tap "Install a certificate" → "CA certificate"</li>
+                            <li>Select the downloaded certificate file</li>
+                            <li>Configure Wi-Fi proxy settings to use dProxy</li>
+                          </ol>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
+                            Note: For Android 7+, apps must be configured to trust user certificates.
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+
+                    {/* iOS Setup */}
+                    <Grid item xs={12} md={4}>
+                      <Card variant="outlined" sx={{ height: "100%" }}>
+                        <CardContent>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+                            <AppleIcon sx={{ color: "#555" }} />
+                            <Typography variant="subtitle1" fontWeight="bold">
+                              iOS
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            For iPhone, iPad, and iOS simulators:
+                          </Typography>
+                          <ol style={{ paddingLeft: "1.2em", margin: 0, fontSize: "0.875rem" }}>
+                            <li>Download the CA certificate</li>
+                            <li>Open the file on your iOS device</li>
+                            <li>Go to Settings → General → VPN & Device Management</li>
+                            <li>Install the profile</li>
+                            <li>Go to Settings → General → About → Certificate Trust Settings</li>
+                            <li>Enable full trust for the dProxy certificate</li>
+                            <li>Configure Wi-Fi proxy settings</li>
+                          </ol>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+
+                    {/* Desktop/Backend Setup */}
+                    <Grid item xs={12} md={4}>
+                      <Card variant="outlined" sx={{ height: "100%" }}>
+                        <CardContent>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+                            <ComputerIcon sx={{ color: "#1976d2" }} />
+                            <Typography variant="subtitle1" fontWeight="bold">
+                              Desktop / Backend
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            For local apps or backend services:
+                          </Typography>
+                          <ol style={{ paddingLeft: "1.2em", margin: 0, fontSize: "0.875rem" }}>
+                            <li>Download the CA certificate</li>
+                            <li>Set environment variables:</li>
+                          </ol>
+                          <Box
+                            component="pre"
+                            sx={{
+                              backgroundColor: "#f5f5f5",
+                              p: 1,
+                              borderRadius: 1,
+                              fontSize: "0.75rem",
+                              overflow: "auto",
+                              mt: 1,
+                            }}
+                          >
+                            {`export HTTP_PROXY=http://localhost:8080
+export HTTPS_PROXY=http://localhost:8080
+export NODE_EXTRA_CA_CERTS=/path/to/dproxy-ca.crt`}
+                          </Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+                            Or add to system trust store for global trust.
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  </Grid>
+                </Box>
+              </AccordionDetails>
+            </Accordion>
           </Box>
         </TabPanel>
       </Paper>

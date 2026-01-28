@@ -21,7 +21,7 @@
  * }
  */
 
-const { log } = require("winston");
+const logger = require("../../utils/logger");
 
 class RequestInterceptor {
   /**

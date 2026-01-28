@@ -24,6 +24,7 @@ class TrafficConfigManager {
     this._trafficConfig = null;
     this._mappingConfig = null;
     this._endpointConfig = null;
+    this._proxyConfig = null;
 
     // Compiled regex patterns for performance
     this._compiledMonitorPattern = null;
@@ -33,6 +34,26 @@ class TrafficConfigManager {
 
     // Flag to track initialization
     this._initialized = false;
+
+    // Default proxy configuration
+    this._defaultProxyConfig = {
+      // Default matching settings for REPLAY mode (used when no endpoint rule defined)
+      replayDefaults: {
+        match_version: 0, // 0 = Closest (fallback), 1 = Exact
+        match_platform: 1, // 1 = Exact, 0 = Any
+        match_environment: "exact", // "exact", "sit", "stage", "dev", "prod"
+        match_language: 1, // 1 = Exact, 0 = Any
+        match_endpoint: [], // Array of regex pattern strings for fuzzy endpoint matching
+      },
+      // Default matching settings for RECORDING mode (read-only, always exact match)
+      recordingDefaults: {
+        match_version: 1, // 1 = Exact (always)
+        match_platform: 1, // 1 = Exact (always)
+        match_environment: "exact", // "exact" (always)
+        match_language: 1, // 1 = Exact (always)
+        match_endpoint: [], // Always empty for RECORDING mode (exact match only)
+      },
+    };
   }
 
   /**
@@ -46,12 +67,14 @@ class TrafficConfigManager {
       await this._loadTrafficConfig();
       await this._loadMappingConfig();
       await this._loadEndpointConfig();
+      await this._loadProxyConfig();
 
       this._initialized = true;
       logger.info("[TrafficConfigManager] Configuration initialized successfully", {
         hasTrafficConfig: !!this._trafficConfig,
         hasMappingConfig: !!this._mappingConfig,
         hasEndpointConfig: !!this._endpointConfig,
+        hasProxyConfig: !!this._proxyConfig,
         monitoringEnabled: this._isMonitoringEnabled(),
       });
     } catch (error) {
@@ -155,6 +178,31 @@ class TrafficConfigManager {
       this._endpointConfig = null;
       this._compiledEndpointPatterns = null;
       this._compiledTagPatterns = null;
+    }
+  }
+
+  /**
+   * Load proxy config from database
+   * @private
+   */
+  async _loadProxyConfig() {
+    try {
+      const database = dbConnection.getDatabase();
+      const row = database.prepare("SELECT config FROM config WHERE type = 'proxy'").get();
+
+      if (row && row.config) {
+        this._proxyConfig = JSON.parse(row.config);
+        logger.debug("[TrafficConfigManager] Proxy config loaded from database");
+      } else {
+        // Use default config if not in database
+        this._proxyConfig = { ...this._defaultProxyConfig };
+        logger.debug("[TrafficConfigManager] No proxy config in database - using defaults");
+      }
+    } catch (error) {
+      logger.error("[TrafficConfigManager] Failed to load proxy config", {
+        error: error.message,
+      });
+      this._proxyConfig = { ...this._defaultProxyConfig };
     }
   }
 
@@ -641,6 +689,109 @@ class TrafficConfigManager {
   }
 
   // ============================================================================
+  // Proxy Config Methods
+  // ============================================================================
+
+  /**
+   * Get proxy configuration (includes default matching settings)
+   * @returns {Object} Proxy configuration with defaults
+   */
+  getProxyConfig() {
+    // Return merged config with defaults
+    return {
+      ...this._defaultProxyConfig,
+      ...this._proxyConfig,
+    };
+  }
+
+  /**
+   * Get default REPLAY matching settings
+   * @returns {Object} Default matching settings for REPLAY mode
+   */
+  getReplayDefaults() {
+    const config = this.getProxyConfig();
+    return config.replayDefaults || this._defaultProxyConfig.replayDefaults;
+  }
+
+  /**
+   * Get default RECORDING matching settings (read-only)
+   * @returns {Object} Default matching settings for RECORDING mode
+   */
+  getRecordingDefaults() {
+    // Recording defaults are always fixed
+    return this._defaultProxyConfig.recordingDefaults;
+  }
+
+  /**
+   * Get endpoint matching patterns for REPLAY mode
+   * @returns {Array<string>} Array of regex pattern strings
+   */
+  getEndpointPatterns() {
+    const replayDefaults = this.getReplayDefaults();
+    return replayDefaults.match_endpoint || [];
+  }
+
+  /**
+   * Update proxy configuration
+   * @param {Object} config - New proxy configuration (only replayDefaults can be updated)
+   */
+  async updateProxyConfig(config) {
+    try {
+      const database = dbConnection.getDatabase();
+
+      // Validate match_endpoint patterns if provided
+      if (config.replayDefaults && config.replayDefaults.match_endpoint) {
+        const patterns = config.replayDefaults.match_endpoint;
+        if (!Array.isArray(patterns)) {
+          throw new Error("match_endpoint must be an array of regex pattern strings");
+        }
+        for (const pattern of patterns) {
+          if (typeof pattern !== "string") {
+            throw new Error("Each pattern in match_endpoint must be a string");
+          }
+          try {
+            new RegExp(pattern, "i");
+          } catch (err) {
+            throw new Error(`Invalid regex pattern "${pattern}": ${err.message}`);
+          }
+        }
+      }
+
+      // Merge with defaults to ensure all fields exist
+      const mergedConfig = {
+        replayDefaults: {
+          ...this._defaultProxyConfig.replayDefaults,
+          ...config.replayDefaults,
+        },
+        // Recording defaults are read-only, always use defaults
+        recordingDefaults: { ...this._defaultProxyConfig.recordingDefaults },
+      };
+
+      // Upsert the config
+      const existing = database.prepare("SELECT id FROM config WHERE type = 'proxy'").get();
+      const configJson = JSON.stringify(mergedConfig);
+
+      if (existing) {
+        database.prepare("UPDATE config SET config = ?, updated_at = ? WHERE type = 'proxy'").run(configJson, getLocalISOString());
+      } else {
+        database
+          .prepare("INSERT INTO config (type, config, created_at, updated_at) VALUES ('proxy', ?, ?, ?)")
+          .run(configJson, getLocalISOString(), getLocalISOString());
+      }
+
+      // Update cache
+      this._proxyConfig = mergedConfig;
+
+      logger.info("[TrafficConfigManager] Proxy config updated");
+    } catch (error) {
+      logger.error("[TrafficConfigManager] Failed to update proxy config", {
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  // ============================================================================
   // Refresh Methods
   // ============================================================================
 
@@ -652,6 +803,7 @@ class TrafficConfigManager {
     await this._loadTrafficConfig();
     await this._loadMappingConfig();
     await this._loadEndpointConfig();
+    await this._loadProxyConfig();
     logger.info("[TrafficConfigManager] All configurations refreshed from database");
   }
 

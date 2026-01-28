@@ -84,6 +84,35 @@ export const updateEndpointConfig = (config) => api.put("/endpoint", config);
 export const testEndpointClassification = (path) => api.post("/endpoint/test", { path });
 
 // ============================================================================
+// Proxy Configuration
+// ============================================================================
+
+/**
+ * Get proxy configuration (default matching settings)
+ * @returns {Promise<Object>} Proxy config with replayDefaults and recordingDefaults
+ */
+export const getProxyConfig = () => api.get("/proxy");
+
+/**
+ * Update proxy configuration (only replayDefaults can be updated)
+ * @param {Object} config - Proxy config { replayDefaults }
+ * @returns {Promise<Object>} Updated config
+ */
+export const updateProxyConfig = (config) => api.put("/proxy", config);
+
+/**
+ * Get CA certificate info (without downloading)
+ * @returns {Promise<Object>} CA cert info { available, fileName, size, modifiedAt }
+ */
+export const getCaCertInfo = () => api.get("/proxy/ca-cert/info");
+
+/**
+ * Get CA certificate download URL
+ * @returns {string} URL to download the CA certificate
+ */
+export const getCaCertDownloadUrl = () => "/admin/api/settings/proxy/ca-cert";
+
+// ============================================================================
 // Session Configuration
 // ============================================================================
 

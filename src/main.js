@@ -2,7 +2,7 @@
  * main.js
  *
  * Application entry point
- * Starts dProxy server with new architecture
+ * Starts Deep Proxy server with new architecture
  */
 
 require("dotenv").config();
@@ -61,7 +61,7 @@ process.on("uncaughtException", (error) => {
 // Start server
 (async () => {
   try {
-    logger.info("dProxy starting...", {
+    logger.info("Deep Proxy starting...", {
       version: require("../package.json").version,
       port,
     });
@@ -72,7 +72,7 @@ process.on("uncaughtException", (error) => {
     const modeService = server.getModeService();
     const currentMode = modeService.getCurrentMode();
 
-    logger.info("dProxy ready!", {
+    logger.info("Deep Proxy ready!", {
       managementApi: `http://localhost:${port}/api`,
       health: `http://localhost:${port}/health`,
       mode: modeService.getCurrentMode(),
@@ -80,7 +80,7 @@ process.on("uncaughtException", (error) => {
 
     // Log some helpful information
     console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("📡 dProxy Server Started Successfully!");
+    console.log("📡 Deep Proxy Server Started Successfully!");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log(`🌐 Server:          http://localhost:${port}`);
     console.log(`🔧 Mode:            ${modeService.getCurrentMode()}`);
@@ -96,7 +96,7 @@ process.on("uncaughtException", (error) => {
     console.log("  GET  /api/templates          - Get response templates");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
   } catch (error) {
-    logger.error("Failed to start dProxy", { error: error.message });
+    logger.error("Failed to start Deep Proxy", { error: error.message });
     process.exit(1);
   }
 })();

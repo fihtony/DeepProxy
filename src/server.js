@@ -624,7 +624,7 @@ class ProxyServer {
         });
 
         this.server.listen(this.port, () => {
-          logger.info("dProxy server started", {
+          logger.info("Deep Proxy server started", {
             port: this.port,
             mode: this.modeService.getCurrentMode(),
           });

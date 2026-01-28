@@ -84,7 +84,7 @@ const config = {
 
   // CORS configuration
   cors: {
-    origins: (process.env.CORS_ORIGINS || "http://localhost:3080,http://localhost:8080").split(","),
+    origins: (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:8080").split(","),
     credentials: process.env.CORS_CREDENTIALS !== "false",
   },
 
@@ -103,7 +103,7 @@ const config = {
 
   // Web UI configuration
   webUI: {
-    port: parseInt(process.env.WEB_UI_PORT || "3080", 10),
+    port: parseInt(process.env.WEB_UI_PORT || "3000", 10),
     apiBaseUrl: process.env.WEB_UI_API_BASE_URL || "http://localhost:8080",
   },
 
