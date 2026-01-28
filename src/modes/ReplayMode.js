@@ -143,15 +143,29 @@ class ReplayMode extends ModeHandler {
             userId: userId,
           });
         } else {
-          // Secure endpoint without userId is an error
+          // Secure endpoint without userId is an error - provide detailed diagnostic info
+          const hasDPSession = current.headers.cookie && current.headers.cookie.includes("DPSESSION");
+          const hasAuthorization = !!current.headers.authorization;
+          const hasCookie = !!current.headers.cookie;
+          
           logger.error("[REPLAY_MODE] Secure endpoint without valid authentication", {
             path: actualPath,
+            hasCookie,
+            hasDPSession,
+            hasAuthorization,
+            cookieCount: hasCookie ? (current.headers.cookie.match(/=/g) || []).length : 0,
+            authHeaderPrefix: hasAuthorization ? current.headers.authorization.substring(0, 20) : null,
           });
 
           const ContextFactory = require("../core/context/ContextFactory");
           const errorResponse = ContextFactory.createErrorResponse(401, "Authentication required", {
             error: "No valid DPSESSION, User Session, or Bearer token found for secure endpoint",
             path: actualPath,
+            diagnostic: {
+              hasCookie,
+              hasDPSession,
+              hasAuthorization,
+            },
           });
           errorResponse.setLatency(Date.now() - startTime);
           return errorResponse;

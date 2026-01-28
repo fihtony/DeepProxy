@@ -60,7 +60,7 @@ class HttpForwarder {
       const isNoBodyMethod = noBodyMethods.includes(config.method?.toUpperCase());
 
       // Log all outgoing requests for debugging
-      logger.info("[HttpForwarder] Axios interceptor - ACTUAL outgoing request", {
+      logger.info("[HttpForwarder] ACTUAL outgoing request", {
         method: config.method,
         url: config.url,
         headerKeys: config.headers ? Object.keys(config.headers) : [],
@@ -71,8 +71,8 @@ class HttpForwarder {
           ? Buffer.isBuffer(config.data)
             ? config.data.length
             : typeof config.data === "string"
-            ? config.data.length
-            : 0
+              ? config.data.length
+              : 0
           : 0,
       });
 
@@ -202,7 +202,7 @@ class HttpForwarder {
         }
 
         // Debug: Log actual request options sent to axios
-        logger.info("[HttpForwarder] Axios request details", {
+        logger.info("[HttpForwarder] Request details", {
           method: requestOptions.method,
           url: requestOptions.url,
           headerKeys: Object.keys(requestOptions.headers),

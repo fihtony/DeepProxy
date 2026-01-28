@@ -19,6 +19,8 @@
 
 const logger = require("../../utils/logger");
 const { normalizeQueryParams, scoreBodyFieldMatch, compareBodyMatchScores } = require("../../utils/jsonUtils");
+const { getInstance: getTrafficConfigManager } = require("../../config/TrafficConfigManager");
+const { request } = require("express");
 
 class MatchingEngine {
   /**
@@ -51,15 +53,24 @@ class MatchingEngine {
     const httpMethod = current.method;
 
     logger.info("[MatchingEngine] Finding match", {
+      mode: mode || "undefined",
       userId,
-      method: httpMethod,
-      path: actualPath,
-      mode: mode || "any",
+      request: httpMethod + " " + actualPath,
     });
 
     // Step 1: Get endpoint matching configuration
-    // Pass mode parameter to only find configurations for this specific mode
-    const config = await this.endpointConfigRepo.findMatchingConfig(httpMethod, actualPath, mode);
+    // First, try to find config with fuzzy matching using global endpoint patterns
+    let config = null;
+    const fuzzyPatterns = this._generateFuzzyPatternsForConfig(actualPath);
+
+    if (fuzzyPatterns.length > 0) {
+      config = await this.endpointConfigRepo.findMatchingConfig(httpMethod, actualPath, mode, {
+        fuzzyPatterns: fuzzyPatterns,
+      });
+    } else {
+      // Fall back to exact matching if no fuzzy patterns
+      config = await this.endpointConfigRepo.findMatchingConfig(httpMethod, actualPath, mode);
+    }
 
     logger.info("[MatchingEngine] Config found", {
       hasConfig: !!config,
@@ -78,6 +89,7 @@ class MatchingEngine {
       logger.info("[MatchingEngine] Match found", {
         requestId: match.request.id,
         responseStatus: match.response?.response_status,
+        request: httpMethod + " " + actualPath,
       });
     } else {
       logger.warn("[MatchingEngine] No match found", {
@@ -138,8 +150,11 @@ class MatchingEngine {
     // Method and path (exact match, case-insensitive)
     baseConditions.push("LOWER(ar.method) = LOWER(?)");
     baseParams.push(method);
-    baseConditions.push("LOWER(ar.endpoint_path) = LOWER(?)");
-    baseParams.push(path);
+
+    // Endpoint path matching - uses fuzzy matching in REPLAY mode if patterns configured
+    const endpointCondition = this._buildEndpointPathCondition(path, config);
+    baseConditions.push(endpointCondition.sql);
+    baseParams.push(...endpointCondition.params);
 
     // endpoint_type flag
     baseConditions.push("ar.endpoint_type = ?");
@@ -216,11 +231,135 @@ class MatchingEngine {
   }
 
   /**
+   * Generate fuzzy search patterns for matching endpoint_matching_config table
+   * Uses global endpoint patterns to create pattern alternatives that can match
+   * different endpoints in the config table (e.g., service-1-ns, service-2-ns, etc.)
+   *
+   * This allows a request for /api/service-2-ns/endpoint to find configurations
+   * that were created for /api/service-1-ns/endpoint but use similar patterns
+   *
+   * @param {string} requestPath - The incoming request endpoint path
+   * @returns {Array<string>} Array of fuzzy patterns for matching config endpoints
+   * @private
+   */
+  _generateFuzzyPatternsForConfig(requestPath) {
+    try {
+      const EndpointMatcher = require("../../utils/EndpointMatcher");
+      const trafficConfigManager = getTrafficConfigManager();
+
+      // Get endpoint patterns from global proxy config
+      const patterns = trafficConfigManager.getEndpointPatterns();
+
+      if (!patterns || patterns.length === 0) {
+        return [];
+      }
+
+      // Create matcher and generate SQL patterns (GLOB)
+      const matcher = new EndpointMatcher(patterns);
+      const sqlPatterns = matcher.generateSqlPatterns(requestPath);
+
+      if (!sqlPatterns || sqlPatterns.length === 0) {
+        return [];
+      }
+
+      // Extract just the SQL patterns for use in config matching
+      const fuzzyPatterns = sqlPatterns.map((p) => p.sqlPattern);
+
+      logger.debug("[MatchingEngine] Generated fuzzy patterns for config matching", {
+        requestPath: requestPath.substring(0, 80),
+        patternCount: fuzzyPatterns.length,
+        patterns: fuzzyPatterns.map((p) => p.substring(0, 80)),
+      });
+
+      return fuzzyPatterns;
+    } catch (err) {
+      logger.warn("[MatchingEngine] Error generating fuzzy patterns for config", {
+        error: err.message,
+        requestPath: requestPath,
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Build endpoint path matching condition
+   *
+   * In REPLAY mode: Uses fuzzy matching with patterns from proxy config (match_endpoint array)
+   * In RECORDING mode: Uses exact match only
+   *
+   * If match_endpoint patterns are configured, generates SQL GLOB patterns
+   * Otherwise uses exact match
+   *
+   * @param {string} path - The incoming request endpoint path
+   * @param {Object} config - Optional endpoint-specific config
+   * @returns {Object} { sql: string, params: array }
+   * @private
+   */
+  _buildEndpointPathCondition(path, config) {
+    try {
+      const EndpointMatcher = require("../../utils/EndpointMatcher");
+      const trafficConfigManager = getTrafficConfigManager();
+
+      // Get endpoint patterns from proxy config (REPLAY mode only)
+      const patterns = trafficConfigManager.getEndpointPatterns();
+
+      if (patterns && patterns.length > 0) {
+        logger.debug("[MatchingEngine] Using fuzzy endpoint matching", {
+          path: path,
+          patternCount: patterns.length,
+          patterns: patterns,
+        });
+
+        // Create matcher and build WHERE clause with fuzzy patterns
+        const matcher = new EndpointMatcher(patterns);
+        const whereClause = matcher.buildEndpointWhereClause(path);
+
+        logger.debug("[MatchingEngine] Built endpoint WHERE clause", {
+          conditions: whereClause.conditions,
+          params: whereClause.params,
+          combinedCondition: "(" + whereClause.conditions.join(" OR ") + ")",
+        });
+
+        if (whereClause.conditions && whereClause.conditions.length > 0) {
+          // Combine all conditions with OR (pattern 1 OR pattern 2 OR ...)
+          const combinedCondition = "(" + whereClause.conditions.join(" OR ") + ")";
+          logger.debug("[MatchingEngine] Final endpoint condition", {
+            sql: combinedCondition,
+          });
+          return { sql: combinedCondition, params: whereClause.params };
+        }
+      }
+    } catch (err) {
+      logger.warn("[MatchingEngine] Error building endpoint fuzzy match condition", {
+        error: err.message,
+        path: path,
+      });
+    }
+
+    // Fallback: exact match (case-insensitive)
+    return {
+      sql: "LOWER(ar.endpoint_path) = LOWER(?)",
+      params: [path],
+    };
+  }
+
+  /**
    * Build environment matching condition
    * @private
    */
   _buildEnvironmentCondition(appEnvironment, config) {
-    const matchEnvironment = config?.match_environment || "exact";
+    // Get default from proxy config when no endpoint config exists
+    let defaultEnv = "exact";
+    if (!config) {
+      try {
+        const defaults = getTrafficConfigManager().getReplayDefaults();
+        defaultEnv = defaults.match_environment || "exact";
+      } catch (err) {
+        logger.error("[MatchingEngine] Error getting replay defaults", { error: err.message });
+        // Use fallback if config not available
+      }
+    }
+    const matchEnvironment = config?.match_environment || defaultEnv;
 
     if (matchEnvironment === "exact") {
       // Exact match (case-insensitive)
@@ -266,10 +405,26 @@ class MatchingEngine {
     const { appVersion, appLanguage, appPlatform } = searchParams;
     const strategies = [];
 
-    // Determine matching modes from config (default to exact match when no config)
-    const versionMode = config ? config.match_version : 1; // 1 = exact, 0 = fallback
-    const languageMode = config ? config.match_language : 1; // 1 = exact, 0 = fallback
-    const platformMode = config ? config.match_platform : 1; // 1 = exact, 0 = fallback
+    // Get default values from proxy config when no endpoint config exists
+    let defaults = { match_version: 1, match_language: 1, match_platform: 1 };
+    if (!config) {
+      try {
+        const trafficConfigManager = getTrafficConfigManager();
+        defaults = trafficConfigManager.getReplayDefaults();
+      } catch (err) {
+        logger.debug("[MatchingEngine] Could not get replay defaults, using fallback exact match", {
+          error: err.message,
+          stack: err.stack,
+        });
+      }
+    } else {
+      logger.debug("[MatchingEngine] Using endpoint-specific config", { config });
+    }
+
+    // Determine matching modes from config (use proxy defaults when no config)
+    const versionMode = config ? config.match_version : defaults.match_version;
+    const languageMode = config ? config.match_language : defaults.match_language;
+    const platformMode = config ? config.match_platform : defaults.match_platform;
 
     // Strategy 1: All exact matches (always try first)
     strategies.push({
@@ -354,7 +509,7 @@ class MatchingEngine {
         (s) =>
           s.versionMode === allFallback.versionMode &&
           s.languageMode === allFallback.languageMode &&
-          s.platformMode === allFallback.platformMode
+          s.platformMode === allFallback.platformMode,
       );
 
       if (!isDuplicate) {
@@ -411,10 +566,11 @@ class MatchingEngine {
       ORDER BY ar.updated_at DESC
     `;
 
-    logger.debug("[MatchingEngine] Trying strategy", {
+    logger.debug("[MatchingEngine] Executing query", {
       strategy: strategy.name,
-      sql: sql.replace(/\s+/g, " ").substring(0, 200),
-      paramsCount: params.length,
+      sql: sql,
+      params: params,
+      conditionCount: conditions.length,
     });
 
     const results = await this.db.all(sql, params);
@@ -758,21 +914,175 @@ class MatchingEngine {
       return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
     };
 
-    const target = parseVersion(targetVersion);
+    const [targetMajor, targetMinor, targetPatch] = parseVersion(targetVersion);
 
-    const calculateDistance = (v) => {
-      const parts = parseVersion(v);
-      // Weight major > minor > patch
-      return Math.abs(target[0] - parts[0]) * 10000 + Math.abs(target[1] - parts[1]) * 100 + Math.abs(target[2] - parts[2]);
+    /**
+     * Comprehensive version matching algorithm
+     * Rules:
+     * 1. If major versions match:
+     *    - If minor versions match: exact match (patch match) is best, otherwise find closest patch
+     *    - If minor versions differ:
+     *      - If minor distance is same, prefer lower minor with latest patch
+     *      - If minor distance differs, prefer closer distance
+     * 2. If major versions differ:
+     *    - If major distance is same, prefer lower major with latest minor/patch
+     *      BUT if we're BELOW target major, prefer HIGHER version (closer to target)
+     *      AND if we're ABOVE target major, prefer LOWER version (closer to target)
+     *    - If major distance differs, prefer closer distance
+     */
+    const scoreVersion = (candidateVersion) => {
+      const [cMajor, cMinor, cPatch] = parseVersion(candidateVersion);
+
+      const majorDiff = targetMajor - cMajor;
+      const minorDiff = targetMinor - cMinor;
+      const patchDiff = targetPatch - cPatch;
+
+      const majorDist = Math.abs(majorDiff);
+      const minorDist = Math.abs(minorDiff);
+      const patchDist = Math.abs(patchDiff);
+
+      let score = {
+        level: 0, // 0=exact, 1=minor differ, 2=major differ
+        majorDistance: majorDist,
+        minorDistance: minorDist,
+        patchDistance: patchDist,
+        // majorDirection: negative = candidate is LOWER than target, positive = HIGHER
+        majorDirection: majorDiff === 0 ? 0 : majorDiff > 0 ? -1 : 1,
+        minorDirection: minorDiff === 0 ? 0 : minorDiff > 0 ? -1 : 1,
+        patchDirection: patchDiff === 0 ? 0 : patchDiff > 0 ? -1 : 1,
+        candidateMajor: cMajor,
+        candidateMinor: cMinor,
+        candidatePatch: cPatch,
+      };
+
+      if (majorDist === 0) {
+        if (minorDist === 0) {
+          score.level = 0;
+        } else {
+          score.level = 1;
+        }
+      } else {
+        score.level = 2;
+      }
+
+      return score;
     };
 
     return candidates.sort((a, b) => {
-      const distA = calculateDistance(a.app_version);
-      const distB = calculateDistance(b.app_version);
-      if (distA !== distB) {
-        return distA - distB; // Closer version first
+      const scoreA = scoreVersion(a.app_version);
+      const scoreB = scoreVersion(b.app_version);
+
+      // Primary: Compare levels (exact > minor > major)
+      if (scoreA.level !== scoreB.level) {
+        return scoreA.level - scoreB.level;
       }
-      // If same distance, prefer the one updated more recently
+
+      // Level 0: Same major and minor - compare patch distances
+      if (scoreA.level === 0) {
+        if (scoreA.patchDistance !== scoreB.patchDistance) {
+          return scoreA.patchDistance - scoreB.patchDistance;
+        }
+        return new Date(b.updated_at) - new Date(a.updated_at);
+      }
+
+      // Level 1: Same major, different minor
+      if (scoreA.level === 1) {
+        if (scoreA.minorDistance !== scoreB.minorDistance) {
+          return scoreA.minorDistance - scoreB.minorDistance;
+        }
+
+        // Same minor distance: prefer lower minor version
+        if (scoreA.minorDirection !== scoreB.minorDirection) {
+          return scoreA.minorDirection - scoreB.minorDirection;
+        }
+
+        // Both lower or both upper with same distance and direction
+        // Compare actual minor version first
+        if (scoreA.candidateMinor !== scoreB.candidateMinor) {
+          if (scoreA.minorDirection === -1) {
+            // Both lower: prefer highest minor (latest)
+            return scoreB.candidateMinor - scoreA.candidateMinor;
+          } else if (scoreA.minorDirection === 1) {
+            // Both upper: prefer lowest minor
+            return scoreA.candidateMinor - scoreB.candidateMinor;
+          }
+        }
+
+        // Same minor version, compare patch
+        if (scoreA.candidatePatch !== scoreB.candidatePatch) {
+          // Compare patch by actual version number, not distance
+          // to prefer latest/lowest depending on direction
+          if (scoreA.minorDirection === -1) {
+            // Both lower: prefer highest patch (latest version)
+            return scoreB.candidatePatch - scoreA.candidatePatch;
+          } else if (scoreA.minorDirection === 1) {
+            // Both upper: prefer lowest patch
+            return scoreA.candidatePatch - scoreB.candidatePatch;
+          } else {
+            // minorDirection === 0 shouldn't happen at Level 1
+            return scoreB.candidatePatch - scoreA.candidatePatch;
+          }
+        }
+
+        return new Date(b.updated_at) - new Date(a.updated_at);
+      }
+
+      // Level 2: Different major versions
+      if (scoreA.level === 2) {
+        if (scoreA.majorDistance !== scoreB.majorDistance) {
+          return scoreA.majorDistance - scoreB.majorDistance;
+        }
+
+        // Same major distance: prefer lower major version
+        if (scoreA.majorDirection !== scoreB.majorDirection) {
+          return scoreA.majorDirection - scoreB.majorDirection;
+        }
+
+        // Both lower or both upper with same major distance
+        // Compare actual major version first
+        if (scoreA.candidateMajor !== scoreB.candidateMajor) {
+          if (scoreA.majorDirection === -1) {
+            // Both lower: prefer HIGHEST major (latest version)
+            return scoreB.candidateMajor - scoreA.candidateMajor;
+          } else if (scoreA.majorDirection === 1) {
+            // Both upper: prefer LOWEST major
+            return scoreA.candidateMajor - scoreB.candidateMajor;
+          }
+        }
+
+        // Same major, compare minor
+        if (scoreA.candidateMinor !== scoreB.candidateMinor) {
+          // Compare by actual minor version number, not distance
+          if (scoreA.majorDirection === -1) {
+            // Both major lower: prefer highest minor
+            return scoreB.candidateMinor - scoreA.candidateMinor;
+          } else if (scoreA.majorDirection === 1) {
+            // Both major upper: prefer lowest minor
+            return scoreA.candidateMinor - scoreB.candidateMinor;
+          } else {
+            // majorDirection === 0 shouldn't happen at Level 2
+            return scoreB.candidateMinor - scoreA.candidateMinor;
+          }
+        }
+
+        // Same major and minor, compare patch
+        if (scoreA.candidatePatch !== scoreB.candidatePatch) {
+          // Compare by actual patch version number, not distance
+          if (scoreA.majorDirection === -1) {
+            // Both major lower: prefer highest patch
+            return scoreB.candidatePatch - scoreA.candidatePatch;
+          } else if (scoreA.majorDirection === 1) {
+            // Both major upper: prefer lowest patch
+            return scoreA.candidatePatch - scoreB.candidatePatch;
+          } else {
+            // majorDirection === 0 shouldn't happen at Level 2
+            return scoreB.candidatePatch - scoreA.candidatePatch;
+          }
+        }
+
+        return new Date(b.updated_at) - new Date(a.updated_at);
+      }
+
       return new Date(b.updated_at) - new Date(a.updated_at);
     });
   }

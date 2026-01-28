@@ -23,7 +23,7 @@ function captureRequestBody(req, res, next) {
   if (req.method === "GET" || req.method === "HEAD" || req.method === "DELETE") {
     req.body = null;
     req.rawBody = null;
-    logger.info("[BODY_CAPTURE] Skipped (method)", { method: req.method });
+    logger.debug("[BODY_CAPTURE] Skipped (method)", { method: req.method });
     return next();
   }
 
@@ -31,7 +31,7 @@ function captureRequestBody(req, res, next) {
   if (req.get("content-length") === "0" || !req.get("content-type")) {
     req.body = null;
     req.rawBody = null;
-    logger.info("[BODY_CAPTURE] Skipped (no content)");
+    logger.debug("[BODY_CAPTURE] Skipped (no content)");
     return next();
   }
 
@@ -39,7 +39,7 @@ function captureRequestBody(req, res, next) {
   if (req.path.startsWith("/admin")) {
     req.body = null;
     req.rawBody = null;
-    logger.info("[BODY_CAPTURE] Skipped (/admin route)");
+    logger.debug("[BODY_CAPTURE] Skipped (/admin route)");
     return next();
   }
 

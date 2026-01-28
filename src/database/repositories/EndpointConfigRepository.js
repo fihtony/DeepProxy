@@ -70,20 +70,42 @@ class EndpointConfigRepository extends BaseRepository {
 
   /**
    * Find matching configuration for request
+   * Supports both exact matching and fuzzy matching with endpoint patterns
    * @param {string} method - HTTP method
    * @param {string} path - Request path
    * @param {string} type - Optional type filter ('replay' or 'recording')
+   * @param {Object} options - Optional matching options
+   *   - endpointPatterns: Array of global endpoint patterns for fuzzy matching
+   *   - fuzzyPatterns: Pre-computed fuzzy patterns from global rules
    * @returns {Promise<Object|null>} Matching configuration or null
    */
-  async findMatchingConfig(method, path, type = null) {
+  async findMatchingConfig(method, path, type = null, options = null) {
+    const logger = require("../../utils/logger");
+
     // Get all enabled configs ordered by priority
     const configs = await this.findAllEnabled(type);
 
     // Try exact method match first, then wildcard
     for (const config of configs) {
       if (config.http_method === method || config.http_method === "*") {
+        // Try exact pattern match first
         if (this._matchesPattern(path, config.endpoint_pattern)) {
           return config;
+        }
+
+        // If fuzzy patterns provided (from global endpoint matching rules),
+        // try fuzzy matching using SQL GLOB
+        if (options?.fuzzyPatterns && options.fuzzyPatterns.length > 0) {
+          for (const fuzzyPattern of options.fuzzyPatterns) {
+            if (this._matchesGlobPattern(config.endpoint_pattern, fuzzyPattern)) {
+              logger.debug("[EndpointConfigRepository] Matched config via fuzzy pattern", {
+                configId: config.id,
+                configPattern: config.endpoint_pattern,
+                fuzzyPattern: fuzzyPattern,
+              });
+              return config;
+            }
+          }
         }
       }
     }
@@ -188,7 +210,7 @@ class EndpointConfigRepository extends BaseRepository {
       {
         orderBy: "priority",
         orderDir: "DESC",
-      }
+      },
     );
   }
 
@@ -234,6 +256,103 @@ class EndpointConfigRepository extends BaseRepository {
 
     const regex = new RegExp(`^${regexPattern}$`);
     return regex.test(path);
+  }
+
+  /**
+   * Check if database endpoint pattern matches a fuzzy search pattern using GLOB
+   * This is used for matching configured patterns against dynamically generated fuzzy patterns
+   * from global endpoint matching rules
+   * @private
+   */
+  _matchesGlobPattern(dbPattern, fuzzyPattern) {
+    // Convert GLOB pattern to regex for comparison
+    // In GLOB:
+    // - * matches any sequence of characters
+    // - ? matches any single character
+    // - [...] matches any character in the set
+    // - [a-z] matches any character in range
+
+    const globToRegex = (glob) => {
+      let i = 0;
+      let regex = "";
+
+      while (i < glob.length) {
+        const char = glob[i];
+
+        if (char === "*") {
+          // * matches zero or more characters
+          regex += ".*";
+          i++;
+        } else if (char === "?") {
+          // ? matches exactly one character
+          regex += ".";
+          i++;
+        } else if (char === "[") {
+          // Character class [...]
+          let j = i + 1;
+          let hasNegation = false;
+
+          // Check for negation [^...]
+          if (j < glob.length && glob[j] === "^") {
+            hasNegation = true;
+            j++;
+          }
+
+          // Find the closing bracket
+          while (j < glob.length && glob[j] !== "]") {
+            j++;
+          }
+
+          if (j < glob.length) {
+            // Extract the character class content
+            const classContent = glob.substring(i + 1 + (hasNegation ? 1 : 0), j);
+
+            if (hasNegation) {
+              regex += "[^" + classContent + "]";
+            } else {
+              regex += "[" + classContent + "]";
+            }
+            i = j + 1;
+          } else {
+            // No closing bracket found, treat [ as literal
+            regex += "\\[";
+            i++;
+          }
+        } else if (char === "\\") {
+          // Escaped character
+          if (i + 1 < glob.length) {
+            const nextChar = glob[i + 1];
+            regex += "\\" + nextChar;
+            i += 2;
+          } else {
+            regex += "\\\\";
+            i++;
+          }
+        } else {
+          // Regular character - escape special regex chars
+          if (".+^${}()|[]\\".includes(char)) {
+            regex += "\\" + char;
+          } else {
+            regex += char;
+          }
+          i++;
+        }
+      }
+
+      return new RegExp(`^${regex}$`);
+    };
+
+    const fuzzyRegex = globToRegex(fuzzyPattern);
+    const logger = require("../../utils/logger");
+
+    const matches = fuzzyRegex.test(dbPattern);
+    logger.debug("[EndpointConfigRepository] GLOB pattern match check", {
+      dbPattern: dbPattern.substring(0, 80),
+      fuzzyPattern: fuzzyPattern.substring(0, 80),
+      matches: matches,
+    });
+
+    return matches;
   }
 
   /**

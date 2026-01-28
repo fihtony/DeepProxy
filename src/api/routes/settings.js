@@ -364,6 +364,191 @@ function initializeRoutes() {
   });
 
   // ============================================================================
+  // Proxy Configuration Routes
+  // ============================================================================
+
+  /**
+   * GET /api/settings/proxy
+   * Get proxy configuration (default matching settings for REPLAY/RECORDING modes)
+   */
+  router.get("/proxy", async (req, res) => {
+    try {
+      const configManager = getInstance();
+
+      // Refresh from database before returning
+      await configManager._loadProxyConfig();
+
+      const config = configManager.getProxyConfig();
+
+      res.json({
+        success: true,
+        data: config,
+      });
+    } catch (error) {
+      logger.error("Failed to get proxy config", { error: error.message });
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * PUT /api/settings/proxy
+   * Update proxy configuration (only replayDefaults can be updated)
+   */
+  router.put("/proxy", async (req, res) => {
+    try {
+      const config = req.body;
+
+      // Validate replayDefaults if provided
+      if (config.replayDefaults) {
+        const rd = config.replayDefaults;
+
+        // Validate match_version: 0 (closest) or 1 (exact)
+        if (rd.match_version !== undefined && rd.match_version !== 0 && rd.match_version !== 1) {
+          return res.status(400).json({
+            success: false,
+            error: "replayDefaults.match_version must be 0 (Closest) or 1 (Exact)",
+          });
+        }
+
+        // Validate match_platform: 0 (any) or 1 (exact)
+        if (rd.match_platform !== undefined && rd.match_platform !== 0 && rd.match_platform !== 1) {
+          return res.status(400).json({
+            success: false,
+            error: "replayDefaults.match_platform must be 0 (Any) or 1 (Exact)",
+          });
+        }
+
+        // Validate match_language: 0 (any) or 1 (exact)
+        if (rd.match_language !== undefined && rd.match_language !== 0 && rd.match_language !== 1) {
+          return res.status(400).json({
+            success: false,
+            error: "replayDefaults.match_language must be 0 (Any) or 1 (Exact)",
+          });
+        }
+
+        // Validate match_environment
+        const validEnvValues = ["exact", "sit", "stage", "dev", "prod"];
+        if (rd.match_environment !== undefined && !validEnvValues.includes(rd.match_environment)) {
+          return res.status(400).json({
+            success: false,
+            error: `replayDefaults.match_environment must be one of: ${validEnvValues.join(", ")}`,
+          });
+        }
+
+        // Validate match_endpoint - must be array of regex strings
+        if (rd.match_endpoint !== undefined) {
+          if (!Array.isArray(rd.match_endpoint)) {
+            return res.status(400).json({
+              success: false,
+              error: "replayDefaults.match_endpoint must be an array of regex pattern strings",
+            });
+          }
+          // Validate each pattern
+          for (let i = 0; i < rd.match_endpoint.length; i++) {
+            const pattern = rd.match_endpoint[i];
+            if (typeof pattern !== "string") {
+              return res.status(400).json({
+                success: false,
+                error: `replayDefaults.match_endpoint[${i}] must be a string`,
+              });
+            }
+            try {
+              new RegExp(pattern, "i");
+            } catch (err) {
+              return res.status(400).json({
+                success: false,
+                error: `replayDefaults.match_endpoint[${i}] is not a valid regex pattern: ${err.message}`,
+              });
+            }
+          }
+        }
+      }
+
+      const configManager = getInstance();
+      await configManager.updateProxyConfig(config);
+
+      res.json({
+        success: true,
+        message: "Proxy configuration updated",
+        data: configManager.getProxyConfig(),
+      });
+    } catch (error) {
+      logger.error("Failed to update proxy config", { error: error.message });
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/settings/proxy/ca-cert
+   * Download the CA certificate for HTTPS interception
+   */
+  router.get("/proxy/ca-cert", (req, res) => {
+    try {
+      const fs = require("fs");
+      const path = require("path");
+
+      // CA cert is stored in data/certs/ca.cert.pem
+      const certPath = path.join(__dirname, "../../../data/certs/ca.cert.pem");
+
+      if (!fs.existsSync(certPath)) {
+        return res.status(404).json({
+          success: false,
+          error: "CA certificate not found. Please ensure the proxy has been initialized.",
+        });
+      }
+
+      const certContent = fs.readFileSync(certPath, "utf8");
+
+      // Set headers for file download
+      res.setHeader("Content-Type", "application/x-pem-file");
+      res.setHeader("Content-Disposition", 'attachment; filename="dproxy-ca.crt"');
+      res.send(certContent);
+    } catch (error) {
+      logger.error("Failed to download CA certificate", { error: error.message });
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/settings/proxy/ca-cert/info
+   * Get CA certificate information without downloading
+   */
+  router.get("/proxy/ca-cert/info", (req, res) => {
+    try {
+      const fs = require("fs");
+      const path = require("path");
+
+      const certPath = path.join(__dirname, "../../../data/certs/ca.cert.pem");
+
+      if (!fs.existsSync(certPath)) {
+        return res.json({
+          success: true,
+          data: {
+            exists: false,
+            message: "CA certificate not found",
+          },
+        });
+      }
+
+      const stats = fs.statSync(certPath);
+
+      res.json({
+        success: true,
+        data: {
+          exists: true,
+          fileName: "dproxy-ca.crt",
+          downloadUrl: "/api/settings/proxy/ca-cert",
+          size: stats.size,
+          modifiedAt: stats.mtime.toISOString(),
+        },
+      });
+    } catch (error) {
+      logger.error("Failed to get CA cert info", { error: error.message });
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ============================================================================
   // Session Configuration Routes
   // ============================================================================
 
@@ -476,6 +661,7 @@ function initializeRoutes() {
           mapping: configManager.getMappingConfig(),
           endpoint: configManager.getEndpointConfig(),
           session: sessionConfigManager.getConfigSync(),
+          proxy: configManager.getProxyConfig(),
         },
         monitoringEnabled: configManager.isMonitoringEnabled(),
       });
@@ -506,6 +692,7 @@ function initializeRoutes() {
           mapping: configManager.getMappingConfig(),
           endpoint: configManager.getEndpointConfig(),
           session: sessionConfigManager.getConfigSync(),
+          proxy: configManager.getProxyConfig(),
         },
         monitoringEnabled: configManager.isMonitoringEnabled(),
       });
@@ -541,6 +728,7 @@ function initializeRoutes() {
           mapping: configManager.getMappingConfig(),
           endpoint: configManager.getEndpointConfig(),
           session: sessionConfigManager.getConfigSync(),
+          proxy: configManager.getProxyConfig(),
         },
       };
 
@@ -557,7 +745,7 @@ function initializeRoutes() {
   /**
    * POST /api/settings/import
    * Import configurations from backup, with conflict detection
-   * Body: { configs: { traffic?, mapping?, endpoint?, session? }, overwrite: boolean }
+   * Body: { configs: { traffic?, mapping?, endpoint?, session?, proxy? }, overwrite: boolean }
    */
   router.post("/import", async (req, res) => {
     try {
@@ -584,13 +772,14 @@ function initializeRoutes() {
         mapping: configManager.getMappingConfig(),
         endpoint: configManager.getEndpointConfig(),
         session: sessionConfigManager.getConfigSync(),
+        proxy: configManager.getProxyConfig(),
       };
 
       const conflicts = {};
       const importResults = {};
 
       // Check each config type
-      const configTypes = ["traffic", "mapping", "endpoint", "session"];
+      const configTypes = ["traffic", "mapping", "endpoint", "session", "proxy"];
 
       for (const type of configTypes) {
         if (configs[type]) {
@@ -636,6 +825,10 @@ function initializeRoutes() {
                 await sessionConfigManager.saveConfig(configs[type]);
                 importResults[type] = { success: true };
                 break;
+              case "proxy":
+                await configManager.updateProxyConfig(configs[type]);
+                importResults[type] = { success: true };
+                break;
             }
           } catch (err) {
             importResults[type] = { success: false, error: err.message };
@@ -656,6 +849,7 @@ function initializeRoutes() {
           mapping: configManager.getMappingConfig(),
           endpoint: configManager.getEndpointConfig(),
           session: sessionConfigManager.getConfigSync(),
+          proxy: configManager.getProxyConfig(),
         },
       });
     } catch (error) {

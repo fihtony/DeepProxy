@@ -194,7 +194,7 @@ class ModeService {
   /**
    * Handle request using current mode
    * Non-monitored requests (not matching configured monitoring criteria) are directly forwarded
-   * and bypass normal dProxy processing (matching, stats recording, etc.)
+   * and bypass normal Deep Proxy processing (matching, stats recording, etc.)
    * @param {Object} requestContext RequestContext instance
    * @param {Object} responseContext ResponseContext instance
    * @param {Object} options Mode-specific options
@@ -207,7 +207,7 @@ class ModeService {
       // Check if this is a non-monitored request (e.g., CDN, static image request, request from unmonitored domain)
       // These should be directly forwarded without endpoint matching or stats recording
       if (shouldBypassDProxy(requestContext)) {
-        logger.info("Non-monitored request detected - bypassing dProxy, direct forward", {
+        logger.info("Non-monitored request detected - bypassing Deep Proxy, direct forward", {
           method: requestContext.getMethod(),
           path: requestContext.getPath(),
           userAgent: requestContext.getCurrent().headers["user-agent"] || "unknown",
