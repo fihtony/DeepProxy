@@ -21,7 +21,7 @@ const config = {
 
   // Proxy configuration
   proxy: {
-    defaultMode: process.env.DEFAULT_MODE || "paththrough", // Options: passthrough, recording, replay
+    defaultMode: process.env.DEFAULT_MODE || "passthrough", // Options: passthrough, recording, replay
     targetBaseUrl: process.env.TARGET_BASE_URL || "http://api.example.com",
     requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || "30000", 10),
   },
