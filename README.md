@@ -61,23 +61,30 @@ Access the proxy at:
 - **Web UI Dashboard**: http://localhost:3080
 - **Admin API**: http://localhost:8080/admin
 
+### Run Web UI
+
+The Web UI is a React application that provides a dashboard for managing the proxy. To run it:
+
+```bash
+# From the project root, run the web UI in development mode
+npm run web:dev
+
+# Or navigate to the web directory and run directly
+cd web
+npm install  # First time setup only
+npm run dev
+```
+
+The Web UI will be available at http://localhost:3080. Make sure the proxy server is running on port 8080 for the Web UI to connect to the backend API.
+
+To build the Web UI for production:
+
+```bash
+npm run web:build
+```
+
 ## Usage
 
-### Configure Mobile App
-
-Point your mobile app to Deep Proxy instead of real backend:
-
-**Android (OkHttp):**
-
-```java
-String baseUrl = "http://localhost:8080/api/";
-```
-
-**iOS (Alamofire):**
-
-```swift
-let baseURL = "http://localhost:8080/api/"
-```
 
 ### Switch Modes
 
@@ -130,82 +137,13 @@ src/
   ├── services/          # Core business logic
   ├── utils/             # Session management, logging, utilities
   └── middleware/        # Authentication, validation, body capture
-tests/
-  ├── integration/       # End-to-end tests
-  └── unit/             # Unit tests
 web/
   └── src/              # React Web UI dashboard
 ```
 
-## API Overview
-
-### Get Current Mode
-
-```bash
-GET /admin/mode
-```
-
-### Switch Mode
-
-```bash
-POST /admin/mode
-Authorization: Bearer <ADMIN_API_KEY>
-Content-Type: application/json
-
-{"mode": "replay"}
-```
-
-### View Statistics
-
-```bash
-GET /admin/stats?start_date=2025-12-01&end_date=2025-12-10
-```
-
-## Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run integration tests
-npm run test:integration
-
-# Watch mode for development
-npm run test:watch
-```
-
-## Troubleshooting
-
-```bash
-# Update package.json to use better-sqlite3 >= 11.7.0, then:
-npm install
-
-# If you still see C++20 errors, set the compiler flag:
-CXXFLAGS="-std=c++20" npm install
-```
-
-**Note**: If upgrading isn't possible, consider using Node.js v20 LTS which has broader compatibility with native modules.
-
-**Mobile app can't reach proxy**
-
-- Verify firewall allows port 8080
-- Check mobile device is on same network or use `0.0.0.0` for HOST
-- Confirm app is pointing to correct proxy URL
-
-**Responses not caching**
-
-- Check mode is set to `recording`
-- Verify endpoint is configured for caching in Web UI
-- Check logs for errors: `tail -f logs/dproxy.log`
-
-**HTTPS issues**
-
-- Set `ENABLE_HTTPS=true` in `.env`
-- Ensure certificate files exist at `SSL_CERT_PATH` and `SSL_KEY_PATH`
-- On iOS/Android, import proxy certificate as trusted
 
 ## License
 
-Copyright (c) 2025 Tony XU <fihtony@gmail.com>
+Copyright (c) 2026 Tony Xu <fihtony@gmail.com>
 
 Licensed under the MIT License. See [LICENSE](LICENSE) file for details.
