@@ -44,6 +44,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { getStats } from "../services/api";
+import axios from "axios";
 import { applyTagsToEndpoint, getEndpointTypeTag } from "../utils/endpointTagUtils";
 
 // Format large numbers with K/M suffixes
@@ -546,9 +547,17 @@ function Dashboard({ mode }) {
         setShowAnimation(true);
       }
     } catch (err) {
-      // Ignore AbortError from canceled requests (expected when React.StrictMode remounts)
-      if (err.name === "AbortError") {
-        console.log("Previous stats request was canceled (expected in development with StrictMode)");
+      // Ignore cancellation errors from canceled requests (expected when React.StrictMode remounts or rapid filter changes)
+      // Check multiple ways axios might indicate cancellation
+      const isCanceled =
+        axios.isCancel?.(err) ||
+        err.name === "CanceledError" ||
+        err.code === "ERR_CANCELED" ||
+        err.name === "AbortError" ||
+        (err.message && err.message.toLowerCase().includes("canceled"));
+
+      if (isCanceled) {
+        // Silently ignore canceled requests - they're expected behavior
         return;
       }
 

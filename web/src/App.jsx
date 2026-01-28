@@ -189,13 +189,13 @@ function AppContent() {
               right: 0,
               backgroundColor: currentMode === "recording" ? "#b71c1c" : "#f57c00",
               color: "white",
-              py: 0.3,
+              py: 0.15,
               px: 2,
               zIndex: (theme) => theme.zIndex.appBar + 1,
               textAlign: "center",
             }}
           >
-            <Typography variant="body2" sx={{ fontWeight: "bold", fontSize: "0.75rem" }}>
+            <Typography variant="body2" sx={{ fontWeight: "bold", fontSize: "0.65rem" }}>
               {currentMode === "recording"
                 ? "🔴 RECORDING MODE - All requests are being captured"
                 : "🟠 REPLAY MODE - Returning cached responses"}
@@ -208,12 +208,17 @@ function AppContent() {
           sx={{
             width: { sm: `calc(100% - ${drawerWidth}px)` },
             ml: { sm: `${drawerWidth}px` },
-            top: currentMode !== "passthrough" ? "24px" : 0,
-            transition: "top 0.3s ease",
+            top: 0,
             borderTop: "none",
           }}
         >
-          <Toolbar>
+          <Toolbar
+            sx={{
+              minHeight: "64px !important",
+              paddingTop: currentMode !== "passthrough" ? "10px" : undefined,
+              alignItems: "center",
+            }}
+          >
             <IconButton color="inherit" edge="start" onClick={handleDrawerToggle} sx={{ mr: 2, display: { sm: "none" } }}>
               <MenuIcon />
             </IconButton>
@@ -335,8 +340,6 @@ function AppContent() {
             flexGrow: 1,
             p: 3,
             width: { sm: `calc(100% - ${drawerWidth}px)` },
-            mt: currentMode !== "passthrough" ? "24px" : 0,
-            transition: "margin-top 0.3s ease",
           }}
         >
           <Toolbar />
