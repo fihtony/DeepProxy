@@ -497,6 +497,7 @@ function Settings() {
       endpoint: "Endpoint Types",
       session: "Session Management",
       proxy: "Proxy Config",
+      endpointRules: "Endpoint Rules",
     };
     return names[type] || type;
   };

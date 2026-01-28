@@ -715,10 +715,70 @@ function initializeRoutes() {
       const configManager = getInstance();
       const { getInstance: getSessionConfigManager } = require("../../config/SessionConfigManager");
       const sessionConfigManager = getSessionConfigManager();
+      const dbConnection = require("../../database/connection");
+      const db = dbConnection.getDatabase();
 
       // Refresh to ensure we have latest data
       await configManager.refreshAll();
       await sessionConfigManager.refresh();
+
+      // Get all endpoint rules directly from database
+      const sql = `
+        SELECT
+          id,
+          endpoint_pattern,
+          http_method,
+          match_version,
+          match_language,
+          match_platform,
+          match_environment,
+          match_headers,
+          match_query_params,
+          match_body,
+          match_response_status,
+          priority,
+          enabled,
+          type,
+          created_at,
+          updated_at
+        FROM endpoint_matching_config
+        ORDER BY priority ASC, endpoint_pattern ASC
+      `;
+      const stmt = db.prepare(sql);
+      const endpointRules = stmt.all();
+
+      // Parse JSON fields in endpoint rules for proper export
+      const parsedEndpointRules = endpointRules.map((rule) => {
+        const parsed = { ...rule };
+        // Parse JSON string fields to arrays/objects
+        if (parsed.match_headers) {
+          try {
+            parsed.match_headers = JSON.parse(parsed.match_headers);
+          } catch (e) {
+            // Keep as string if parsing fails
+          }
+        }
+        if (parsed.match_query_params) {
+          try {
+            parsed.match_query_params = JSON.parse(parsed.match_query_params);
+          } catch (e) {
+            // Keep as string if parsing fails
+          }
+        }
+        if (parsed.match_body) {
+          try {
+            parsed.match_body = JSON.parse(parsed.match_body);
+          } catch (e) {
+            // Keep as string if parsing fails
+          }
+        }
+        // Convert boolean fields from 0/1 to true/false
+        parsed.match_version = parsed.match_version === 1;
+        parsed.match_language = parsed.match_language === 1;
+        parsed.match_platform = parsed.match_platform === 1;
+        parsed.enabled = parsed.enabled === 1;
+        return parsed;
+      });
 
       const exportData = {
         version: "1.0",
@@ -729,6 +789,7 @@ function initializeRoutes() {
           endpoint: configManager.getEndpointConfig(),
           session: sessionConfigManager.getConfigSync(),
           proxy: configManager.getProxyConfig(),
+          endpointRules: parsedEndpointRules,
         },
       };
 
@@ -766,6 +827,13 @@ function initializeRoutes() {
       await configManager.refreshAll();
       await sessionConfigManager.refresh();
 
+      // Get current endpoint rules count for conflict detection
+      const dbConnection = require("../../database/connection");
+      const db = dbConnection.getDatabase();
+      const countStmt = db.prepare("SELECT COUNT(*) as count FROM endpoint_matching_config");
+      const countResult = countStmt.get();
+      const currentEndpointRulesCount = countResult.count;
+
       // Detect conflicts (existing non-empty configs)
       const currentConfigs = {
         traffic: configManager.getTrafficConfig(),
@@ -773,22 +841,30 @@ function initializeRoutes() {
         endpoint: configManager.getEndpointConfig(),
         session: sessionConfigManager.getConfigSync(),
         proxy: configManager.getProxyConfig(),
+        endpointRules: currentEndpointRulesCount,
       };
 
       const conflicts = {};
       const importResults = {};
 
       // Check each config type
-      const configTypes = ["traffic", "mapping", "endpoint", "session", "proxy"];
+      const configTypes = ["traffic", "mapping", "endpoint", "session", "proxy", "endpointRules"];
 
       for (const type of configTypes) {
         if (configs[type]) {
-          const hasExisting = currentConfigs[type] && Object.keys(currentConfigs[type]).length > 0;
+          let hasExisting = false;
+          if (type === "endpointRules") {
+            // For endpoint rules, check if count > 0
+            hasExisting = currentEndpointRulesCount > 0;
+          } else {
+            // For other configs, check if object has keys
+            hasExisting = currentConfigs[type] && Object.keys(currentConfigs[type]).length > 0;
+          }
           if (hasExisting && !overwrite) {
             conflicts[type] = {
               hasConflict: true,
-              current: currentConfigs[type],
-              incoming: configs[type],
+              current: type === "endpointRules" ? { count: currentEndpointRulesCount } : currentConfigs[type],
+              incoming: type === "endpointRules" ? { count: Array.isArray(configs[type]) ? configs[type].length : 0 } : configs[type],
             };
           }
         }
@@ -829,6 +905,79 @@ function initializeRoutes() {
                 await configManager.updateProxyConfig(configs[type]);
                 importResults[type] = { success: true };
                 break;
+              case "endpointRules":
+                // Import endpoint rules
+                if (!Array.isArray(configs[type])) {
+                  importResults[type] = { success: false, error: "endpointRules must be an array" };
+                  break;
+                }
+                
+                if (overwrite) {
+                  // Clear all existing rules if overwrite is true
+                  const deleteStmt = db.prepare("DELETE FROM endpoint_matching_config");
+                  deleteStmt.run();
+                }
+                
+                // Import new rules
+                let importedCount = 0;
+                if (configs[type].length > 0) {
+                  const { getLocalISOString } = require("../../utils/datetimeUtils");
+                  const now = getLocalISOString();
+                  
+                  const insertStmt = db.prepare(`
+                    INSERT INTO endpoint_matching_config (
+                      endpoint_pattern,
+                      http_method,
+                      match_version,
+                      match_language,
+                      match_platform,
+                      match_environment,
+                      match_headers,
+                      match_query_params,
+                      match_body,
+                      match_response_status,
+                      priority,
+                      enabled,
+                      type,
+                      created_at,
+                      updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  `);
+                  
+                  for (const rule of configs[type]) {
+                    // Convert boolean fields back to 0/1 for database
+                    const matchHeadersStr = Array.isArray(rule.match_headers) 
+                      ? JSON.stringify(rule.match_headers) 
+                      : (typeof rule.match_headers === 'string' ? rule.match_headers : null);
+                    const matchQueryParamsStr = Array.isArray(rule.match_query_params) 
+                      ? JSON.stringify(rule.match_query_params) 
+                      : (typeof rule.match_query_params === 'string' ? rule.match_query_params : null);
+                    const matchBodyStr = Array.isArray(rule.match_body) 
+                      ? JSON.stringify(rule.match_body) 
+                      : (typeof rule.match_body === 'string' ? rule.match_body : null);
+
+                    insertStmt.run(
+                      rule.endpoint_pattern,
+                      rule.http_method,
+                      rule.match_version === true || rule.match_version === 1 ? 1 : 0,
+                      rule.match_language === true || rule.match_language === 1 ? 1 : 0,
+                      rule.match_platform === true || rule.match_platform === 1 ? 1 : 0,
+                      rule.match_environment || "exact",
+                      matchHeadersStr,
+                      matchQueryParamsStr,
+                      matchBodyStr,
+                      rule.match_response_status || "2xx",
+                      rule.priority !== undefined && rule.priority !== null ? rule.priority : 10,
+                      rule.enabled !== false ? 1 : 0,
+                      rule.type || "replay",
+                      rule.created_at || now,
+                      rule.updated_at || now
+                    );
+                    importedCount++;
+                  }
+                }
+                importResults[type] = { success: true, imported: importedCount };
+                break;
             }
           } catch (err) {
             importResults[type] = { success: false, error: err.message };
@@ -840,6 +989,11 @@ function initializeRoutes() {
       await configManager.refreshAll();
       await sessionConfigManager.refresh();
 
+      // Get updated endpoint rules count
+      const updatedCountStmt = db.prepare("SELECT COUNT(*) as count FROM endpoint_matching_config");
+      const updatedCountResult = updatedCountStmt.get();
+      const updatedEndpointRulesCount = updatedCountResult.count;
+
       res.json({
         success: true,
         message: "Configurations imported successfully",
@@ -850,6 +1004,7 @@ function initializeRoutes() {
           endpoint: configManager.getEndpointConfig(),
           session: sessionConfigManager.getConfigSync(),
           proxy: configManager.getProxyConfig(),
+          endpointRules: { count: updatedEndpointRulesCount },
         },
       });
     } catch (error) {
