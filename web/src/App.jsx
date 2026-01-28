@@ -143,30 +143,18 @@ function AppContent() {
     <div>
       <Toolbar>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, width: "100%" }}>
-          {/* Pure Geometric Deep Proxy Logo - No Text */}
+          {/* Deep Proxy Logo */}
           <Box
+            component="img"
+            src="/icon.png"
+            alt="Deep Proxy"
             sx={{
               width: 40,
               height: 40,
-              borderRadius: "10px",
-              background: "linear-gradient(135deg, #1976d2 0%, #1565c0 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
               flexShrink: 0,
-              boxShadow: "0 4px 12px rgba(25, 118, 210, 0.3)",
-              position: "relative",
-              overflow: "hidden",
+              objectFit: "contain",
             }}
-          >
-            {/* Pure geometric design: Two opposing chevrons symbolizing bidirectional proxy flow */}
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              {/* Left chevron pointing right */}
-              <path d="M8 5L14 12L8 19" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              {/* Right chevron pointing left */}
-              <path d="M16 5L10 12L16 19" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
-            </svg>
-          </Box>
+          />
           <Typography variant="h6" noWrap sx={{ fontWeight: 600, letterSpacing: "-0.5px" }}>
             Deep Proxy
           </Typography>
