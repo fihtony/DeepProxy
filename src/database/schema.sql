@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS api_responses (
     response_source TEXT NOT NULL DEFAULT 'backend' CHECK(response_source IN ('backend', 'dproxy', 'custom')),
     is_successful BOOLEAN NOT NULL DEFAULT 0,  -- response_status >= 200 and < 300
     template_id INTEGER,                         -- Reference to dproxy_response_templates (for dproxy responses)
+    count INTEGER NOT NULL DEFAULT 1,            -- Number of times this response has been recorded (for weighted average latency)
     latency_ms INTEGER,                          -- Response time in milliseconds
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,

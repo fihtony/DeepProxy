@@ -37,6 +37,13 @@ class TrafficConfigManager {
 
     // Default proxy configuration
     this._defaultProxyConfig = {
+      // Replay latency configuration - controls response delay in REPLAY mode
+      replayLatency: {
+        type: "instant", // "instant", "average", "fixed", "random"
+        value: 200, // Fixed delay in ms (used when type = "fixed")
+        start: 50, // Random range start in ms (used when type = "random")
+        end: 3000, // Random range end in ms (used when type = "random")
+      },
       // Default matching settings for REPLAY mode (used when no endpoint rule defined)
       replayDefaults: {
         match_version: 0, // 0 = Closest (fallback), 1 = Exact
@@ -723,6 +730,16 @@ class TrafficConfigManager {
   }
 
   /**
+   * Get replay latency configuration
+   * Used to determine how long to delay responses in REPLAY mode
+   * @returns {Object} Replay latency config with type, value, start, end
+   */
+  getReplayLatency() {
+    const config = this.getProxyConfig();
+    return config.replayLatency || this._defaultProxyConfig.replayLatency;
+  }
+
+  /**
    * Get endpoint matching patterns for REPLAY mode
    * @returns {Array<string>} Array of regex pattern strings
    */
@@ -733,7 +750,7 @@ class TrafficConfigManager {
 
   /**
    * Update proxy configuration
-   * @param {Object} config - New proxy configuration (only replayDefaults can be updated)
+   * @param {Object} config - New proxy configuration (replayLatency and replayDefaults can be updated)
    */
   async updateProxyConfig(config) {
     try {
@@ -757,8 +774,37 @@ class TrafficConfigManager {
         }
       }
 
+      // Validate replayLatency if provided
+      if (config.replayLatency) {
+        const { type, value, start, end } = config.replayLatency;
+        const validTypes = ["instant", "average", "fixed", "random"];
+        if (type && !validTypes.includes(type)) {
+          throw new Error(`Invalid replayLatency type "${type}". Must be one of: ${validTypes.join(", ")}`);
+        }
+        if (type === "fixed") {
+          if (typeof value !== "number" || value < 5 || value > 30000) {
+            throw new Error("replayLatency.value must be a number between 5 and 30000 (ms)");
+          }
+        }
+        if (type === "random") {
+          if (typeof start !== "number" || start < 0 || start > 30000) {
+            throw new Error("replayLatency.start must be a number between 0 and 30000 (ms)");
+          }
+          if (typeof end !== "number" || end < 0 || end > 30000) {
+            throw new Error("replayLatency.end must be a number between 0 and 30000 (ms)");
+          }
+          if (start > end) {
+            throw new Error("replayLatency.start must be less than or equal to replayLatency.end");
+          }
+        }
+      }
+
       // Merge with defaults to ensure all fields exist
       const mergedConfig = {
+        replayLatency: {
+          ...this._defaultProxyConfig.replayLatency,
+          ...config.replayLatency,
+        },
         replayDefaults: {
           ...this._defaultProxyConfig.replayDefaults,
           ...config.replayDefaults,

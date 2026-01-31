@@ -159,12 +159,19 @@ class ProxyServer {
     // Or it might be null/undefined if no parsing was needed
 
     // Health check endpoint
-    this.app.get("/health", (req, res) => {
-      res.json({
-        status: "healthy",
-        mode: this.modeService.getCurrentMode(),
-        timestamp: new Date().toISOString(),
-      });
+    this.app.get("/health", async (req, res) => {
+      try {
+        const health = await this.modeService.getHealthStatus();
+        const statusCode = health.status === "healthy" ? 200 : 503;
+        res.status(statusCode).json(health);
+      } catch (error) {
+        logger.error("Health check failed", { error: error.message });
+        res.status(503).json({
+          status: "unhealthy",
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
 
     // API Routes (Management Interface)
@@ -281,7 +288,7 @@ class ProxyServer {
       const adminRoutes = ["/admin", "/api", "/health"];
       const isAdminRoute = adminRoutes.some(
         (route) =>
-          req.path === route || req.path.startsWith(route + "/") || req.originalUrl === route || req.originalUrl.startsWith(route + "/")
+          req.path === route || req.path.startsWith(route + "/") || req.originalUrl === route || req.originalUrl.startsWith(route + "/"),
       );
 
       if (isAdminRoute) {
@@ -437,7 +444,7 @@ class ProxyServer {
         duration,
         clientIP,
         mode,
-        requestId
+        requestId,
       );
 
       // Log request completion

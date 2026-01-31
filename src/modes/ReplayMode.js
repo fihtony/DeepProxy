@@ -28,6 +28,7 @@ const ModeHandler = require("./ModeHandler");
 const logger = require("../utils/logger");
 const trafficLogger = require("../utils/traffic_logger");
 const sessionManager = require("../utils/session_manager");
+const { getInstance: getTrafficConfigManager } = require("../config/TrafficConfigManager");
 
 class ReplayMode extends ModeHandler {
   constructor(dependencies) {
@@ -147,7 +148,7 @@ class ReplayMode extends ModeHandler {
           const hasDPSession = current.headers.cookie && current.headers.cookie.includes("DPSESSION");
           const hasAuthorization = !!current.headers.authorization;
           const hasCookie = !!current.headers.cookie;
-          
+
           logger.error("[REPLAY_MODE] Secure endpoint without valid authentication", {
             path: actualPath,
             hasCookie,
@@ -209,6 +210,7 @@ class ReplayMode extends ModeHandler {
       const match = await this.matchingEngine.findMatch(processedRequest, "replay");
 
       let responseContext;
+      let matchedResponse = null;
 
       if (match) {
         // Match found - return recorded response
@@ -218,6 +220,7 @@ class ReplayMode extends ModeHandler {
           score: match.score,
         });
 
+        matchedResponse = match.response;
         responseContext = await this._createResponseFromMatch(match, processedRequest);
       } else {
         // No match - apply fallback behavior
@@ -262,8 +265,25 @@ class ReplayMode extends ModeHandler {
       // Note: Replay mode does NOT forward to backend, so we skip "FORWARDED REQUEST TO BACKEND"
       // and "RESPONSE FROM BACKEND" logs. Only "INCOMING CLIENT REQUEST" and "RESPONSE TO CLIENT" are logged.
       this.storeRequestIdInResponse(responseContext, requestId);
+
+      // Apply configured replay latency delay
+      const replayDelay = this._calculateReplayDelay(matchedResponse);
+      if (replayDelay > 0) {
+        logger.debug("[REPLAY_MODE] Applying replay latency delay", {
+          delayMs: replayDelay,
+          latencyType: getTrafficConfigManager().getReplayLatency()?.type,
+          recordedLatency: matchedResponse?.latency_ms,
+        });
+        await this._applyDelay(replayDelay);
+      }
+
+      // Update duration after delay
+      const finalDuration = Date.now() - startTime;
+      responseContext.setLatency(finalDuration);
+
       logger.info("Replay mode: Request completed", {
-        duration,
+        duration: finalDuration,
+        replayDelay,
         status: responseContext.getStatus(),
         source: responseContext.getSource(),
       });
@@ -394,7 +414,7 @@ class ReplayMode extends ModeHandler {
         setCookieHeaders,
         currentDPSession, // Use DPSESSION as the new user session value
         sessionId,
-        "[REPLAY_MODE]"
+        "[REPLAY_MODE]",
       );
       responseContext.setHeader("set-cookie", setCookieHeaders);
       logger.info("[REPLAY_MODE] User session cookie replaced in Set-Cookie headers", {
@@ -581,6 +601,57 @@ class ReplayMode extends ModeHandler {
    */
   getModeName() {
     return "replay";
+  }
+
+  /**
+   * Calculate the delay to apply based on replayLatency configuration
+   * @param {Object} matchedResponse - The matched response object (may contain latency_ms)
+   * @returns {number} Delay in milliseconds (0 for instant)
+   * @private
+   */
+  _calculateReplayDelay(matchedResponse) {
+    const trafficConfigManager = getTrafficConfigManager();
+    const latencyConfig = trafficConfigManager.getReplayLatency();
+    const type = latencyConfig?.type || "instant";
+
+    switch (type) {
+      case "instant":
+        return 0;
+
+      case "average":
+        // Use the recorded latency_ms from the matched response
+        const recordedLatency = matchedResponse?.latency_ms || 0;
+        return Math.max(0, recordedLatency);
+
+      case "fixed":
+        // Use the configured fixed delay value
+        const fixedValue = latencyConfig?.value || 200;
+        return Math.max(0, Math.min(30000, fixedValue));
+
+      case "random":
+        // Random delay between start and end
+        const start = latencyConfig?.start ?? 50;
+        const end = latencyConfig?.end ?? 3000;
+        const minDelay = Math.max(0, Math.min(start, end));
+        const maxDelay = Math.min(30000, Math.max(start, end));
+        return Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+
+      default:
+        logger.warn("[REPLAY_MODE] Unknown latency type, using instant", { type });
+        return 0;
+    }
+  }
+
+  /**
+   * Apply delay before returning response
+   * @param {number} delayMs - Delay in milliseconds
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _applyDelay(delayMs) {
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
 }
 

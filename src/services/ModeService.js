@@ -28,6 +28,9 @@ class ModeService {
     this.responseService = new ResponseService(db);
     this.matchingService = new MatchingService(db);
 
+    // Record backend launch timestamp for health check
+    this.backendLaunchTime = new Date().toISOString();
+
     // Initialize repositories for mode handlers
     const ApiRequestRepository = require("../database/repositories/ApiRequestRepository");
     const ApiResponseRepository = require("../database/repositories/ApiResponseRepository");
@@ -446,27 +449,18 @@ class ModeService {
       // Test database connection
       await this.db.get("SELECT 1");
 
-      // Get basic statistics
-      const stats = this.getAllStats();
-      const requestCount = await this.requestService.getServiceStats();
-      const responseCount = await this.responseService.getServiceStats();
-
       return {
         status: "healthy",
         mode: this.currentMode,
-        database: "connected",
-        stats,
-        records: {
-          requests: requestCount.totalRequests,
-          responses: responseCount.totalResponses,
-        },
+        launch_timestamp: this.backendLaunchTime,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
       logger.error("Health check failed", { error: error.message });
       return {
         status: "unhealthy",
-        error: error.message,
+        mode: this.currentMode,
+        launch_timestamp: this.backendLaunchTime,
         timestamp: new Date().toISOString(),
       };
     }
