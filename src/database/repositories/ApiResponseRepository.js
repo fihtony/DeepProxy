@@ -54,7 +54,7 @@ class ApiResponseRepository extends BaseRepository {
       {
         orderBy: "created_at",
         orderDir: "DESC",
-      }
+      },
     );
   }
 
@@ -71,7 +71,7 @@ class ApiResponseRepository extends BaseRepository {
         orderBy: "created_at",
         orderDir: "DESC",
         ...options,
-      }
+      },
     );
   }
 
@@ -88,7 +88,7 @@ class ApiResponseRepository extends BaseRepository {
         orderBy: "created_at",
         orderDir: "DESC",
         ...options,
-      }
+      },
     );
   }
 
@@ -105,7 +105,7 @@ class ApiResponseRepository extends BaseRepository {
         orderBy: "created_at",
         orderDir: "DESC",
         ...options,
-      }
+      },
     );
   }
 
@@ -197,11 +197,43 @@ class ApiResponseRepository extends BaseRepository {
    * @param {*} body - New response body
    * @returns {Promise<number>} Number of affected rows
    */
-  async updateBody(responseId, body) {
-    return await this.update(responseId, {
-      response_body: JSON.stringify(body),
-      response_source: "custom",
+  /**
+   * Update response with latency and count for weighted average calculation
+   * Calculates new average latency based on existing count and latency
+   * Formula: new_latency = (old_latency * old_count + current_latency) / (old_count + 1)
+   * @param {number} responseId - Response ID
+   * @param {number} currentLatency - Current response latency in milliseconds
+   * @returns {Promise<Object>} Updated response with new latency and count
+   */
+  async updateLatencyAndCount(responseId, currentLatency) {
+    // Get current response data
+    const response = await this.findById(responseId);
+    if (!response) {
+      throw new Error(`Response ${responseId} not found`);
+    }
+
+    const oldLatency = response.latency_ms || 0;
+    const oldCount = response.count || 1;
+
+    // Calculate new average latency
+    // Formula: new_latency = (old_latency * old_count + current_latency) / (old_count + 1)
+    const newLatency = Math.round((oldLatency * oldCount + currentLatency) / (oldCount + 1));
+    const newCount = oldCount + 1;
+
+    // Update response with new latency and count
+    await this.update(responseId, {
+      latency_ms: newLatency,
+      count: newCount,
     });
+
+    return {
+      id: responseId,
+      latency_ms: newLatency,
+      count: newCount,
+      oldLatency,
+      oldCount,
+      currentLatency,
+    };
   }
 
   /**

@@ -34,7 +34,7 @@ function getRecordingConfig(db, method, endpointPath) {
       SELECT * FROM endpoint_matching_config
       WHERE enabled = 1 AND type = 'recording'
       ORDER BY priority ASC
-    `
+    `,
       )
       .all();
 
@@ -99,7 +99,7 @@ function findExistingSecureRequest(
   normalizedQueryParamsJson,
   mobileHeaders,
   incomingQueryParams = null,
-  incomingBody = null
+  incomingBody = null,
 ) {
   // Check for recording config with match_query_params and match_body
   const recordingConfig = getRecordingConfig(db, method, endpointPath);
@@ -155,7 +155,7 @@ function findExistingSecureRequest(
     mobileHeaders.mobilePlatform || "", // Use empty string if not found
     mobileHeaders.mobileVersion || "", // Use empty string if not found
     mobileHeaders.mobileEnvironment || "", // Use empty string if not found
-    mobileHeaders.acceptLanguage || "en" // Default to "en" if not found
+    mobileHeaders.acceptLanguage || "en", // Default to "en" if not found
   );
 
   // Filter by query params first
@@ -263,7 +263,7 @@ async function saveSecureRequest(
   correlationId = null,
   traceabilityId = null,
   endpointType = "secure",
-  host = null
+  host = null,
 ) {
   try {
     const db = dbConnection.getDatabaseSync();
@@ -305,7 +305,7 @@ async function saveSecureRequest(
       normalizedQueryParamsJson,
       mobileHeaders,
       queryParams,
-      body
+      body,
     );
 
     let requestId;
@@ -370,7 +370,7 @@ async function saveSecureRequest(
         correlationId,
         traceabilityId,
         createdAt,
-        createdAt
+        createdAt,
       );
 
       requestId = result.lastInsertRowid;
@@ -383,15 +383,21 @@ async function saveSecureRequest(
       const existingResponse = db
         .prepare(
           `
-        SELECT id FROM api_responses
+        SELECT id, latency_ms, count FROM api_responses
         WHERE api_request_id = ? AND response_status = ?
         LIMIT 1
-      `
+      `,
         )
         .get(requestId, response.status);
 
       if (existingResponse) {
-        // Update existing response
+        // Update existing response with weighted average latency calculation
+        // Formula: new_latency = (old_latency * old_count + current_latency) / (old_count + 1)
+        const oldLatency = existingResponse.latency_ms || 0;
+        const oldCount = existingResponse.count || 1;
+        const newCount = oldCount + 1;
+        const newLatency = Math.round((oldLatency * oldCount + (duration || 0)) / newCount);
+
         const updateResStmt = db.prepare(`
           UPDATE api_responses
           SET
@@ -400,13 +406,32 @@ async function saveSecureRequest(
             response_body_hash = ?,
             response_source = ?,
             latency_ms = ?,
+            count = ?,
             updated_at = ?
           WHERE id = ?
         `);
 
-        updateResStmt.run(responseBodyJson, responseHeadersJson, responseBodyHash, "backend", duration, createdAt, existingResponse.id);
+        updateResStmt.run(
+          responseBodyJson,
+          responseHeadersJson,
+          responseBodyHash,
+          "backend",
+          newLatency,
+          newCount,
+          createdAt,
+          existingResponse.id,
+        );
 
-        logger.info(`Secure response updated: ${endpointName} status ${response.status} (Response ID: ${existingResponse.id})`);
+        logger.info(
+          `Secure response updated with weighted average latency: ${endpointName} status ${response.status} (Response ID: ${existingResponse.id})`,
+          {
+            oldLatency,
+            oldCount,
+            currentLatency: duration,
+            newLatency,
+            newCount,
+          },
+        );
       } else {
         // Insert new response
         const resStmt = db.prepare(`
@@ -418,10 +443,11 @@ async function saveSecureRequest(
             response_body_hash,
             response_source,
             is_successful,
+            count,
             latency_ms,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         resStmt.run(
@@ -432,9 +458,10 @@ async function saveSecureRequest(
           responseBodyHash,
           "backend",
           isSuccessful ? 1 : 0,
+          1,
           duration,
           createdAt,
-          createdAt
+          createdAt,
         );
 
         logger.info(`Secure response inserted: ${endpointName} status ${response.status}`);

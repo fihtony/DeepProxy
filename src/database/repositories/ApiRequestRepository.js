@@ -188,7 +188,7 @@ class ApiRequestRepository extends BaseRepository {
    */
   async getUniqueEndpoints(userId = null) {
     let sql = `
-      SELECT DISTINCT method, request_path, 
+      SELECT DISTINCT method, endpoint_path, 
              COUNT(*) as request_count,
              MAX(created_at) as last_request_at
       FROM ${this.tableName}
@@ -200,7 +200,7 @@ class ApiRequestRepository extends BaseRepository {
       params.push(userId);
     }
 
-    sql += " GROUP BY method, request_path ORDER BY request_count DESC";
+    sql += " GROUP BY method, endpoint_path ORDER BY request_count DESC";
 
     return await this.db.all(sql, params);
   }

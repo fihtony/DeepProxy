@@ -54,6 +54,7 @@ import {
   Apple as AppleIcon,
   Computer as ComputerIcon,
   Download as DownloadIcon,
+  Timer as TimerIcon,
 } from "@mui/icons-material";
 
 import { HeaderMappingField, DomainListField, EndpointTypeField, TagField } from "../components/SettingsFields";
@@ -219,6 +220,12 @@ function Settings() {
 
   // Proxy config state
   const [proxyConfig, setProxyConfig] = useState({
+    replayLatency: {
+      type: "instant", // "instant", "average", "fixed", "random"
+      value: 200, // Fixed delay in ms
+      start: 50, // Random range start in ms
+      end: 3000, // Random range end in ms
+    },
     replayDefaults: {
       match_version: 0, // 0 = Closest, 1 = Exact
       match_platform: 1, // 0 = Any, 1 = Exact
@@ -686,6 +693,16 @@ function Settings() {
       ...proxyConfig,
       replayDefaults: {
         ...proxyConfig.replayDefaults,
+        [field]: value,
+      },
+    });
+  };
+
+  const handleReplayLatencyChange = (field, value) => {
+    setProxyConfig({
+      ...proxyConfig,
+      replayLatency: {
+        ...proxyConfig.replayLatency,
         [field]: value,
       },
     });
@@ -1198,6 +1215,90 @@ function Settings() {
         {/* Proxy Config Tab */}
         <TabPanel value={activeTab} index={4}>
           <Box sx={{ p: 2 }}>
+            {/* Replay Latency Config */}
+            <Typography variant="h6" sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
+              <TimerIcon color="primary" />
+              Replay Latency
+            </Typography>
+
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Configure how response latency is simulated in REPLAY mode. This setting controls the delay before responses are returned.
+            </Alert>
+
+            <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+              <Grid container spacing={2} alignItems="flex-start">
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Latency Type</InputLabel>
+                    <Select
+                      value={proxyConfig.replayLatency?.type ?? "instant"}
+                      label="Latency Type"
+                      onChange={(e) => handleReplayLatencyChange("type", e.target.value)}
+                    >
+                      <MenuItem value="instant">Instant (No Delay)</MenuItem>
+                      <MenuItem value="average">Average (Recorded)</MenuItem>
+                      <MenuItem value="fixed">Fixed</MenuItem>
+                      <MenuItem value="random">Random Range</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                    {proxyConfig.replayLatency?.type === "instant" && "Responses are returned immediately without any delay."}
+                    {proxyConfig.replayLatency?.type === "average" && "Uses the average latency recorded for each endpoint."}
+                    {proxyConfig.replayLatency?.type === "fixed" && "A fixed delay is applied to all responses."}
+                    {proxyConfig.replayLatency?.type === "random" && "A random delay within the specified range is applied."}
+                  </Typography>
+                </Grid>
+
+                {/* Fixed delay value input */}
+                {proxyConfig.replayLatency?.type === "fixed" && (
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Fixed Delay (ms)"
+                      type="number"
+                      value={proxyConfig.replayLatency?.value ?? 200}
+                      onChange={(e) => handleReplayLatencyChange("value", parseInt(e.target.value, 10) || 0)}
+                      inputProps={{ min: 10, max: 30000, step: 10 }}
+                      helperText="10 - 30,000 ms"
+                    />
+                  </Grid>
+                )}
+
+                {/* Random range inputs */}
+                {proxyConfig.replayLatency?.type === "random" && (
+                  <>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Min Delay (ms)"
+                        type="number"
+                        value={proxyConfig.replayLatency?.start ?? 50}
+                        onChange={(e) => handleReplayLatencyChange("start", parseInt(e.target.value, 10) || 0)}
+                        inputProps={{ min: 0, max: 30000, step: 10 }}
+                        helperText="0 - 30,000 ms"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Max Delay (ms)"
+                        type="number"
+                        value={proxyConfig.replayLatency?.end ?? 3000}
+                        onChange={(e) => handleReplayLatencyChange("end", parseInt(e.target.value, 10) || 0)}
+                        inputProps={{ min: 0, max: 30000, step: 10 }}
+                        helperText="0 - 30,000 ms"
+                      />
+                    </Grid>
+                  </>
+                )}
+              </Grid>
+            </Paper>
+
+            <Divider sx={{ my: 3 }} />
+
             {/* Default Matching Settings - MOVED TO TOP */}
             <Typography variant="h6" sx={{ mb: 2 }}>
               Default Matching Settings
