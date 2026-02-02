@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3080,
+    host: "0.0.0.0", // listen on all interfaces so other devices on the LAN (e.g. Mac mini) can access
     proxy: {
       "/admin": {
         target: "http://localhost:8080",
