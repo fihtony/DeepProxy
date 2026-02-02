@@ -142,6 +142,16 @@ const EndpointManagement = () => {
     return [...new Set(endpointMethods)].sort();
   }, [availableEndpoints, availableMethods, formData.endpoint_pattern]);
 
+  // Method options for the HTTP Method Select: always include current value and "*" so the dropdown
+  // shows the selected method when editing (e.g. regex rules or method "*" which may not be in availableEndpoints)
+  const methodOptions = useMemo(() => {
+    const base = filteredMethods.length > 0 ? filteredMethods : availableMethods;
+    const allowed = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"];
+    const withAllowed = [...new Set([...allowed, ...base])];
+    const current = formData.http_method && !withAllowed.includes(formData.http_method) ? [formData.http_method, ...withAllowed] : withAllowed;
+    return current;
+  }, [filteredMethods, availableMethods, formData.http_method]);
+
   // Filter configs based on endpoint text filter (case-insensitive partial matching)
   const filteredConfigs = useMemo(() => {
     if (!endpointFilter.trim()) {
@@ -195,7 +205,9 @@ const EndpointManagement = () => {
         type: "both",
       });
     }
-    setDialogOpen(true);
+    // Defer opening so the click handler returns quickly (avoids long-task violation)
+    // and so focus can move into the dialog before aria-hidden is applied to #root (avoids a11y violation)
+    setTimeout(() => setDialogOpen(true), 0);
   };
 
   const handleCloseDialog = () => {
@@ -661,7 +673,7 @@ const EndpointManagement = () => {
         </Table>
       </TableContainer>
 
-      {/* Add/Edit Dialog */}
+      {/* Add/Edit Dialog - open deferred in handleOpenDialog so click returns quickly and focus can move before aria-hidden */}
       <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
         <DialogTitle>{getDialogTitle()}</DialogTitle>
         <DialogContent>
@@ -719,7 +731,7 @@ const EndpointManagement = () => {
                     <MenuItem value="">
                       <em>Select Method</em>
                     </MenuItem>
-                    {(filteredMethods.length > 0 ? filteredMethods : availableMethods).map((method) => (
+                    {methodOptions.map((method) => (
                       <MenuItem key={method} value={method}>
                         {method}
                       </MenuItem>
