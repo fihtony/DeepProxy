@@ -59,31 +59,24 @@ class MatchingEngine {
     });
 
     // Step 1: Get endpoint matching configuration
-    // First, try to find config with fuzzy matching using global endpoint patterns
-    let config = null;
-    const fuzzyPatterns = this._generateFuzzyPatternsForConfig(actualPath);
-
-    if (fuzzyPatterns.length > 0) {
-      config = await this.endpointConfigRepo.findMatchingConfig(httpMethod, actualPath, mode, {
-        fuzzyPatterns: fuzzyPatterns,
-      });
-    } else {
-      // Fall back to exact matching if no fuzzy patterns
-      config = await this.endpointConfigRepo.findMatchingConfig(httpMethod, actualPath, mode);
-    }
+    // Find config using regex or pattern matching directly from endpoint_matching_config table
+    // No longer uses replayDefaults.match_endpoint for finding endpoint matching rules
+    const config = await this.endpointConfigRepo.findMatchingConfig(httpMethod, actualPath, mode);
 
     logger.info("[MatchingEngine] Config found", {
       hasConfig: !!config,
       configId: config?.id,
       endpoint_pattern: config?.endpoint_pattern,
       configType: config?.type,
+      regex: config?.regex,
     });
 
     // Step 2: Build search parameters from request context
     const searchParams = this._buildSearchParams(requestContext, actualPath, config);
 
     // Step 3: Execute multi-stage matching with fallback
-    const match = await this._executeMatchingStrategy(searchParams, config);
+    // Pass mode to apply override logic (recording mode always uses exact match)
+    const match = await this._executeMatchingStrategy(searchParams, config, mode);
 
     if (match) {
       logger.info("[MatchingEngine] Match found", {
@@ -124,9 +117,12 @@ class MatchingEngine {
 
   /**
    * Execute matching strategy with fallback logic
+   * @param {Object} searchParams - Search parameters
+   * @param {Object} config - Endpoint matching configuration
+   * @param {string} mode - Mode type ('replay' or 'recording')
    * @private
    */
-  async _executeMatchingStrategy(searchParams, config) {
+  async _executeMatchingStrategy(searchParams, config, mode = null) {
     const { userId, method, path, queryParams, appVersion, appLanguage, appPlatform, appEnvironment, requestHeaders } = searchParams;
 
     // Determine if this is a secure endpoint (userId is not null)
@@ -163,8 +159,8 @@ class MatchingEngine {
     // Query params matching
     const queryCondition = this._buildQueryParamsCondition(queryParams, config);
 
-    // Environment matching
-    const envCondition = this._buildEnvironmentCondition(appEnvironment, config);
+    // Environment matching (pass mode for override logic)
+    const envCondition = this._buildEnvironmentCondition(appEnvironment, config, mode);
     if (envCondition.sql) {
       baseConditions.push(envCondition.sql);
       baseParams.push(...envCondition.params);
@@ -180,8 +176,8 @@ class MatchingEngine {
     // Execute matching with fallback strategies
     // Strategy: Try exact match first for all dimensions, then apply fallback logic
 
-    // Define dimension matching strategies
-    const strategies = this._buildMatchingStrategies(searchParams, config);
+    // Define dimension matching strategies (pass mode for override logic)
+    const strategies = this._buildMatchingStrategies(searchParams, config, mode);
 
     // Try each strategy in order
     for (const strategy of strategies) {
@@ -345,21 +341,48 @@ class MatchingEngine {
 
   /**
    * Build environment matching condition
+   * @param {string} appEnvironment - Application environment from request
+   * @param {Object} config - Endpoint matching configuration
+   * @param {string} mode - Mode type ('replay' or 'recording')
    * @private
    */
-  _buildEnvironmentCondition(appEnvironment, config) {
-    // Get default from proxy config when no endpoint config exists
-    let defaultEnv = "exact";
-    if (!config) {
+  _buildEnvironmentCondition(appEnvironment, config, mode = null) {
+    // RECORDING mode: Always use exact match (override logic does not apply)
+    if (mode === "recording") {
+      if (appEnvironment) {
+        return { sql: "LOWER(ar.app_environment) = LOWER(?)", params: [appEnvironment] };
+      }
+      return { sql: null, params: [] };
+    }
+
+    // REPLAY mode: Apply override logic
+    let matchEnvironment = "exact";
+
+    if (config) {
+      // Config exists - check override flag
+      if (config.override === 1 || config.override === true) {
+        // Override is ON: use config's match_environment value
+        matchEnvironment = config.match_environment || "exact";
+      } else {
+        // Override is OFF: inherit from proxy config defaults
+        try {
+          const defaults = getTrafficConfigManager().getReplayDefaults();
+          matchEnvironment = defaults.match_environment || "exact";
+        } catch (err) {
+          logger.error("[MatchingEngine] Error getting replay defaults", { error: err.message });
+          matchEnvironment = "exact";
+        }
+      }
+    } else {
+      // No config: use proxy config defaults
       try {
         const defaults = getTrafficConfigManager().getReplayDefaults();
-        defaultEnv = defaults.match_environment || "exact";
+        matchEnvironment = defaults.match_environment || "exact";
       } catch (err) {
         logger.error("[MatchingEngine] Error getting replay defaults", { error: err.message });
-        // Use fallback if config not available
+        matchEnvironment = "exact";
       }
     }
-    const matchEnvironment = config?.match_environment || defaultEnv;
 
     if (matchEnvironment === "exact") {
       // Exact match (case-insensitive)
@@ -399,32 +422,80 @@ class MatchingEngine {
 
   /**
    * Build matching strategies based on config
+   * @param {Object} searchParams - Search parameters
+   * @param {Object} config - Endpoint matching configuration
+   * @param {string} mode - Mode type ('replay' or 'recording')
    * @private
    */
-  _buildMatchingStrategies(searchParams, config) {
+  _buildMatchingStrategies(searchParams, config, mode = null) {
     const { appVersion, appLanguage, appPlatform } = searchParams;
     const strategies = [];
 
-    // Get default values from proxy config when no endpoint config exists
+    // RECORDING mode: Always use exact match for all 4 matching fields
+    // Override logic does NOT apply to RECORDING mode
+    if (mode === "recording") {
+      strategies.push({
+        name: "exact",
+        version: appVersion,
+        versionMode: "exact",
+        language: appLanguage,
+        languageMode: "exact",
+        platform: appPlatform,
+        platformMode: "exact",
+      });
+      logger.debug("[MatchingEngine] RECORDING mode: forcing exact match for all dimensions");
+      return strategies;
+    }
+
+    // REPLAY mode: Apply override logic
+    // Get default values from proxy config
     let defaults = { match_version: 1, match_language: 1, match_platform: 1 };
-    if (!config) {
-      try {
-        const trafficConfigManager = getTrafficConfigManager();
-        defaults = trafficConfigManager.getReplayDefaults();
-      } catch (err) {
-        logger.debug("[MatchingEngine] Could not get replay defaults, using fallback exact match", {
-          error: err.message,
-          stack: err.stack,
+    try {
+      const trafficConfigManager = getTrafficConfigManager();
+      defaults = trafficConfigManager.getReplayDefaults();
+    } catch (err) {
+      logger.debug("[MatchingEngine] Could not get replay defaults, using fallback exact match", {
+        error: err.message,
+        stack: err.stack,
+      });
+    }
+
+    // Determine matching modes based on override logic
+    let versionMode, languageMode, platformMode;
+
+    if (config) {
+      if (config.override === 1 || config.override === true) {
+        // Override is ON: use config's values
+        versionMode = config.match_version;
+        languageMode = config.match_language;
+        platformMode = config.match_platform;
+        logger.debug("[MatchingEngine] Override ON: using endpoint-specific config", {
+          versionMode,
+          languageMode,
+          platformMode,
+        });
+      } else {
+        // Override is OFF: inherit from proxy config defaults
+        versionMode = defaults.match_version;
+        languageMode = defaults.match_language;
+        platformMode = defaults.match_platform;
+        logger.debug("[MatchingEngine] Override OFF: inheriting from proxy config defaults", {
+          versionMode,
+          languageMode,
+          platformMode,
         });
       }
     } else {
-      logger.debug("[MatchingEngine] Using endpoint-specific config", { config });
+      // No config: use proxy defaults
+      versionMode = defaults.match_version;
+      languageMode = defaults.match_language;
+      platformMode = defaults.match_platform;
+      logger.debug("[MatchingEngine] No config: using proxy config defaults", {
+        versionMode,
+        languageMode,
+        platformMode,
+      });
     }
-
-    // Determine matching modes from config (use proxy defaults when no config)
-    const versionMode = config ? config.match_version : defaults.match_version;
-    const languageMode = config ? config.match_language : defaults.match_language;
-    const platformMode = config ? config.match_platform : defaults.match_platform;
 
     // Strategy 1: All exact matches (always try first)
     strategies.push({

@@ -26,8 +26,10 @@ function initializeRoutes(db) {
       const sql = `
         SELECT
           id,
+          regex,
           endpoint_pattern,
           http_method,
+          override,
           match_version,
           match_language,
           match_platform,
@@ -100,8 +102,10 @@ function initializeRoutes(db) {
       const sql = `
         SELECT
           id,
+          regex,
           endpoint_pattern,
           http_method,
+          override,
           match_version,
           match_language,
           match_platform,
@@ -170,8 +174,10 @@ function initializeRoutes(db) {
   router.post("/", (req, res) => {
     try {
       const {
+        regex,
         endpoint_pattern,
         http_method,
+        override,
         match_version,
         match_language,
         match_platform,
@@ -201,7 +207,7 @@ function initializeRoutes(db) {
         LIMIT 1
       `;
       const checkStmt = database.prepare(checkSql);
-      const existing = checkStmt.get(endpoint_pattern, http_method, type || "replay");
+      const existing = checkStmt.get(endpoint_pattern, http_method, type || "both");
 
       if (existing) {
         return res.status(409).json({
@@ -212,8 +218,10 @@ function initializeRoutes(db) {
 
       const sql = `
         INSERT INTO endpoint_matching_config (
+          regex,
           endpoint_pattern,
           http_method,
+          override,
           match_version,
           match_language,
           match_platform,
@@ -227,7 +235,7 @@ function initializeRoutes(db) {
           type,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
       const stmt = database.prepare(sql);
@@ -237,9 +245,11 @@ function initializeRoutes(db) {
       const matchQueryParamsStr = Array.isArray(match_query_params) ? JSON.stringify(match_query_params) : match_query_params || null;
       const matchBodyStr = Array.isArray(match_body) ? JSON.stringify(match_body) : match_body || null;
 
-      const result = stmt.run(
+      result = stmt.run(
+        regex ? 1 : 0,
         endpoint_pattern,
         http_method,
+        override ? 1 : 0,
         match_version ? 1 : 0,
         match_language ? 1 : 0,
         match_platform ? 1 : 0,
@@ -250,17 +260,19 @@ function initializeRoutes(db) {
         match_response_status || "2xx",
         priority !== undefined && priority !== null ? priority : 10,
         enabled !== false ? 1 : 0,
-        type || "replay",
+        type || "both",
         getLocalISOString(),
-        getLocalISOString()
+        getLocalISOString(),
       );
 
       // Fetch the created config to return complete object
       const selectSql = `
         SELECT
           id,
+          regex,
           endpoint_pattern,
           http_method,
+          override,
           match_version,
           match_language,
           match_platform,
@@ -299,8 +311,10 @@ function initializeRoutes(db) {
     try {
       const { id } = req.params;
       const {
+        regex,
         endpoint_pattern,
         http_method,
+        override,
         match_version,
         match_language,
         match_platform,
@@ -333,8 +347,10 @@ function initializeRoutes(db) {
       const sql = `
         UPDATE endpoint_matching_config
         SET
+          regex = ?,
           endpoint_pattern = ?,
           http_method = ?,
+          override = ?,
           match_version = ?,
           match_language = ?,
           match_platform = ?,
@@ -358,8 +374,10 @@ function initializeRoutes(db) {
       const matchBodyStr = Array.isArray(match_body) ? JSON.stringify(match_body) : match_body || null;
 
       stmt.run(
+        regex ? 1 : 0,
         endpoint_pattern,
         http_method,
+        override ? 1 : 0,
         match_version ? 1 : 0,
         match_language ? 1 : 0,
         match_platform ? 1 : 0,
@@ -370,17 +388,19 @@ function initializeRoutes(db) {
         match_response_status || "2xx",
         priority !== undefined && priority !== null ? priority : 10,
         enabled ? 1 : 0,
-        type || "replay",
+        type || "both",
         getLocalISOString(),
-        id
+        id,
       );
 
       // Fetch the updated config to return complete object
       const selectSql = `
         SELECT
           id,
+          regex,
           endpoint_pattern,
           http_method,
+          override,
           match_version,
           match_language,
           match_platform,
@@ -453,6 +473,7 @@ function initializeRoutes(db) {
           id,
           endpoint_pattern,
           http_method,
+          override,
           match_version,
           match_language,
           match_platform,

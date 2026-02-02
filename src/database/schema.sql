@@ -230,11 +230,23 @@ CREATE INDEX IF NOT EXISTS idx_stats_composite ON stats(host, endpoint_path, met
 CREATE TABLE IF NOT EXISTS endpoint_matching_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     
+    -- Regex flag: when true, endpoint_pattern is treated as a regex pattern
+    -- When false (default), use exact/pattern matching (same as current behavior)
+    regex BOOLEAN DEFAULT 0,
+    
     -- Endpoint identification
     endpoint_pattern TEXT NOT NULL, -- e.g., '/api/users/:id', '/api/products/*', '/pub/services-A/forceUpgrade'
-    http_method TEXT NOT NULL CHECK(http_method IN ('GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD')),
+                                    -- If regex=1, this is a regex pattern, e.g., '/api/users/\d+' or '/mysunlife-mobile-api/sec/gw/.*common\d-ns/.*'
+    http_method TEXT NOT NULL CHECK(http_method IN ('GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD', '*')),
+    
+    -- Override flag: when true, matching settings are custom (REPLAY mode only)
+    -- When false, inherit from proxy config (replayDefaults for REPLAY, recordingDefaults for RECORDING)
+    -- Note: Override only takes effect in REPLAY mode; RECORDING mode always uses "exact" match
+    override BOOLEAN DEFAULT 0,
     
     -- Matching rules for request (api_requests table)
+    -- These values are only used when override=1 for REPLAY mode
+    -- RECORDING mode always uses exact match regardless of these settings
     match_version BOOLEAN DEFAULT 0, -- Match app_version, 1 - exact match, 0 - closest match
     match_language BOOLEAN DEFAULT 0, -- Match app_language, 1 - exact match, 0 - exact match first then english then any other language
     match_platform BOOLEAN DEFAULT 0, -- Match app_platform, 1 - exact match, 0 - exact match first then any platform
@@ -250,15 +262,14 @@ CREATE TABLE IF NOT EXISTS endpoint_matching_config (
     priority INTEGER DEFAULT 0, -- Lower value = higher priority (matched first for overlapping patterns)
     enabled BOOLEAN DEFAULT 1, -- Whether this config is active
     
-    -- Type: 'replay' for REPLAY mode rules, 'recording' for RECORDING mode rules
-    type TEXT DEFAULT 'replay' CHECK(type IN ('replay', 'recording')),
+    -- Type: 'both' applies to both modes, 'replay' for REPLAY only, 'recording' for RECORDING only
+    type TEXT DEFAULT 'both' CHECK(type IN ('both', 'recording', 'replay')),
     
     -- Timestamps
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,  -- ISO 8601 format with timezone offset (e.g., 2025-12-15T10:30:00-05:00)
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,  -- ISO 8601 format with timezone offset (e.g., 2025-12-15T10:30:00-05:00)
     
     -- Unique constraint: same endpoint pattern, method, and type can only have one config
-    -- This allows both 'replay' and 'recording' type configs for the same endpoint/method pair
     UNIQUE(endpoint_pattern, http_method, type)
 );
 -- Indexes for endpoint_matching_config
@@ -267,6 +278,7 @@ CREATE INDEX IF NOT EXISTS idx_endpoint_config_method ON endpoint_matching_confi
 CREATE INDEX IF NOT EXISTS idx_endpoint_config_priority ON endpoint_matching_config(priority DESC);
 CREATE INDEX IF NOT EXISTS idx_endpoint_config_enabled ON endpoint_matching_config(enabled);
 CREATE INDEX IF NOT EXISTS idx_endpoint_config_type ON endpoint_matching_config(type);
+CREATE INDEX IF NOT EXISTS idx_endpoint_config_regex ON endpoint_matching_config(regex);
 
 -- Note: Trigger for updated_at is removed as SQLite doesn't support function calls in triggers
 -- Application code must handle updated_at updates explicitly using getLocalISOString()

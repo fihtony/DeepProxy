@@ -1493,27 +1493,6 @@ function Settings() {
                   </FormControl>
                 </Grid>
               </Grid>
-
-              {/* Endpoint Patterns Section - Read Only */}
-              <Box sx={{ mt: 3, pt: 3, borderTop: "1px solid #e0e0e0" }}>
-                <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1, color: "text.secondary" }}>
-                  Endpoint Matching Patterns
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Endpoint matching patterns cannot be configured for RECORDING mode. RECORDING always uses exact endpoint path matching.
-                </Typography>
-                <Paper
-                  variant="outlined"
-                  sx={{
-                    p: 2,
-                    backgroundColor: "#f5f5f5",
-                  }}
-                >
-                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-                    Not configurable - RECORDING mode always uses exact match
-                  </Typography>
-                </Paper>
-              </Box>
             </Paper>
 
             {/* Save Button */}
@@ -1538,8 +1517,8 @@ function Settings() {
 
             <Card variant="outlined" sx={{ mb: 3 }}>
               <CardContent>
-                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                  <Box>
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 3 }}>
+                  <Box sx={{ flex: 1 }}>
                     <Typography variant="subtitle1" fontWeight="bold">
                       Deep Proxy CA Certificate
                     </Typography>
@@ -1547,10 +1526,85 @@ function Settings() {
                       {caCertInfo.exists ? `File: ${caCertInfo.fileName} (${caCertInfo.size} bytes)` : "Certificate not available"}
                     </Typography>
                   </Box>
-                  <Button variant="contained" startIcon={<DownloadIcon />} onClick={handleDownloadCaCert} disabled={!caCertInfo.exists}>
+                  <Button
+                    variant="contained"
+                    startIcon={<DownloadIcon />}
+                    onClick={handleDownloadCaCert}
+                    disabled={!caCertInfo.exists}
+                    sx={{ flexShrink: 0, alignSelf: "center" }}
+                  >
                     Download Certificate
                   </Button>
                 </Box>
+
+                {caCertInfo.exists && caCertInfo.sha256 && (
+                  <Box sx={{ mt: 2 }}>
+                    {/* SHA256 Fingerprint */}
+                    <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, mb: 2 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: "text.secondary",
+                          fontWeight: "bold",
+                          whiteSpace: "nowrap",
+                          pt: 1,
+                          minWidth: "fit-content",
+                        }}
+                      >
+                        SHA256 Fingerprint:
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontFamily: "monospace",
+                          fontSize: "0.7rem",
+                          wordBreak: "break-all",
+                          backgroundColor: "#f5f5f5",
+                          p: 1,
+                          borderRadius: 1,
+                          color: "text.primary",
+                          flex: 1,
+                        }}
+                      >
+                        {caCertInfo.sha256}
+                      </Typography>
+                    </Box>
+
+                    {/* SHA1 Fingerprint */}
+                    {caCertInfo.sha1 && (
+                      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "text.secondary",
+                            fontWeight: "bold",
+                            whiteSpace: "nowrap",
+                            pt: 1,
+                            minWidth: "fit-content",
+                          }}
+                        >
+                          SHA1 Fingerprint:
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontFamily: "monospace",
+                            fontSize: "0.7rem",
+                            wordBreak: "break-all",
+                            backgroundColor: "#f5f5f5",
+                            p: 1,
+                            ml: 1.8,
+                            borderRadius: 1,
+                            color: "text.primary",
+                            flex: 1,
+                          }}
+                        >
+                          {caCertInfo.sha1}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                )}
               </CardContent>
             </Card>
 
