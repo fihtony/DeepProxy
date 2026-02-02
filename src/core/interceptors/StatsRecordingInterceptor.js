@@ -75,11 +75,11 @@ class StatsRecordingInterceptor extends ResponseInterceptor {
         return context;
       }
 
-      // Extract relevant information
+      // Extract relevant information; prefer request metadata (set by RequestInterceptor), then headers; use "" to avoid null in DB
       const method = request.method || "GET";
-      const appPlatform = headers["mobile-platform"] || null;
-      const appVersion = headers["mobile-version"] || null;
-      const appEnvironment = headers["mobile-environment"] || null;
+      const appPlatform = requestMetadata.appPlatform ?? headers["mobile-platform"] ?? "";
+      const appVersion = requestMetadata.appVersion ?? headers["mobile-version"] ?? "";
+      const appEnvironment = requestMetadata.appEnvironment ?? headers["mobile-environment"] ?? "";
       const duration = responseMetadata.latency || 0;
 
       // Extract original request URL
@@ -300,10 +300,10 @@ class StatsRecordingInterceptor extends ResponseInterceptor {
     try {
       const { host, endpointPath, method, appPlatform, appVersion, appEnvironment, responseStatus, responseLength, latencyMs } = statData;
 
-      // Normalize empty strings to NULL for proper database handling
-      const normalizedPlatform = appPlatform === "" || !appPlatform ? null : appPlatform;
-      const normalizedVersion = appVersion === "" || !appVersion ? null : appVersion;
-      const normalizedEnvironment = appEnvironment === "" || !appEnvironment ? null : appEnvironment;
+      // Use empty string instead of null to avoid database search issues when not configured
+      const normalizedPlatform = appPlatform === "" || appPlatform == null ? "" : appPlatform;
+      const normalizedVersion = appVersion === "" || appVersion == null ? "" : appVersion;
+      const normalizedEnvironment = appEnvironment === "" || appEnvironment == null ? "" : appEnvironment;
 
       const dbConnection = require("../../database/connection");
       const db = dbConnection.getDatabase();

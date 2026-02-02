@@ -27,10 +27,10 @@ class ApiRequestRepository extends BaseRepository {
       request_path: requestData.path,
       request_headers: JSON.stringify(requestData.headers || {}),
       request_body: requestData.body ? JSON.stringify(requestData.body) : null,
-      app_version: requestData.appVersion || "", // Use empty string for unknown values
-      app_language: requestData.appLanguage || "en", // Default to "en" for language
-      app_platform: requestData.appPlatform || "", // Use empty string for unknown values
-      app_environment: requestData.appEnvironment || "", // Use empty string for unknown values
+      app_version: requestData.appVersion ?? "", // Use empty string to avoid null in DB
+      app_language: requestData.appLanguage ?? "", // Use empty string to avoid null in DB
+      app_platform: requestData.appPlatform ?? "", // Use empty string to avoid null in DB
+      app_environment: requestData.appEnvironment ?? "", // Use empty string to avoid null in DB
     };
 
     return await this.create(data);

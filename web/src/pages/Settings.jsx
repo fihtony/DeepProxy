@@ -204,9 +204,9 @@ function Settings() {
   const [originalSessionConfig, setOriginalSessionConfig] = useState(null);
   const [originalProxyConfig, setOriginalProxyConfig] = useState(null);
 
-  // Traffic config state
+  // Traffic config state (use "source" to match API; backend expects monitor.source)
   const [trafficConfig, setTrafficConfig] = useState({
-    monitor: { from: "header", key: "", pattern: "" },
+    monitor: { source: "header", key: "", pattern: "" },
     domains: [],
   });
 
@@ -252,14 +252,14 @@ function Settings() {
   const [newEndpointPattern, setNewEndpointPattern] = useState("");
   const [patternError, setPatternError] = useState("");
 
-  // Mapping config state
+  // Mapping config state (use "source" to match API)
   const [mappingConfig, setMappingConfig] = useState({
-    app_version: { from: "header", key: "", pattern: null },
-    app_platform: { from: "header", key: "", pattern: null },
-    app_environment: { from: "header", key: "", pattern: null },
-    app_language: { from: "header", key: "", pattern: null },
-    correlation_id: { from: "header", key: "", pattern: null },
-    traceability_id: { from: "header", key: "", pattern: null },
+    app_version: { source: "header", key: "", pattern: null },
+    app_platform: { source: "header", key: "", pattern: null },
+    app_environment: { source: "header", key: "", pattern: null },
+    app_language: { source: "header", key: "", pattern: null },
+    correlation_id: { source: "header", key: "", pattern: null },
+    traceability_id: { source: "header", key: "", pattern: null },
   });
 
   // Endpoint config state
@@ -275,17 +275,36 @@ function Settings() {
 
   // Check if config has changed from original
   const trafficChanged = useMemo(() => {
-    if (!originalTrafficConfig) return false;
+    // If no original config, consider changed when current differs from empty default
+    if (!originalTrafficConfig) {
+      const emptyTraffic = { monitor: { source: "header", key: "", pattern: "" }, domains: [] };
+      return !deepEqual(trafficConfig, emptyTraffic);
+    }
     return !deepEqual(trafficConfig, originalTrafficConfig);
   }, [trafficConfig, originalTrafficConfig]);
 
   const mappingChanged = useMemo(() => {
-    if (!originalMappingConfig) return false;
+    // If no original config, consider changed when current differs from empty default
+    if (!originalMappingConfig) {
+      const emptyMapping = {
+        app_version: { source: "header", key: "", pattern: null },
+        app_platform: { source: "header", key: "", pattern: null },
+        app_environment: { source: "header", key: "", pattern: null },
+        app_language: { source: "header", key: "", pattern: null },
+        correlation_id: { source: "header", key: "", pattern: null },
+        traceability_id: { source: "header", key: "", pattern: null },
+      };
+      return !deepEqual(mappingConfig, emptyMapping);
+    }
     return !deepEqual(mappingConfig, originalMappingConfig);
   }, [mappingConfig, originalMappingConfig]);
 
   const endpointChanged = useMemo(() => {
-    if (!originalEndpointConfig) return false;
+    // If no original config, consider changed when current differs from empty default
+    if (!originalEndpointConfig) {
+      const emptyEndpoint = { types: [], tags: [], fallback: "public" };
+      return !deepEqual(endpointConfig, emptyEndpoint);
+    }
     return !deepEqual(endpointConfig, originalEndpointConfig);
   }, [endpointConfig, originalEndpointConfig]);
 
@@ -318,18 +337,26 @@ function Settings() {
       ]);
 
       if (trafficRes.success && trafficRes.data) {
-        setTrafficConfig(trafficRes.data);
-        setOriginalTrafficConfig(trafficRes.data);
+        const data = trafficRes.data;
+        const monitor = data.monitor ? { ...data.monitor, source: data.monitor.source ?? data.monitor.from ?? "header" } : { source: "header", key: "", pattern: "" };
+        const normalized = { ...data, monitor };
+        setTrafficConfig(normalized);
+        setOriginalTrafficConfig(normalized);
       } else {
         // No config in database - start with empty
-        const emptyTraffic = { monitor: { from: "header", key: "", pattern: "" }, domains: [] };
+        const emptyTraffic = { monitor: { source: "header", key: "", pattern: "" }, domains: [] };
         setTrafficConfig(emptyTraffic);
         setOriginalTrafficConfig(null);
       }
 
       if (mappingRes.success && mappingRes.data) {
-        setMappingConfig(mappingRes.data);
-        setOriginalMappingConfig(mappingRes.data);
+        const data = mappingRes.data;
+        const normalizeSource = (obj) => (obj && (obj.source != null || obj.from != null) ? { ...obj, source: obj.source ?? obj.from ?? "header" } : obj);
+        const normalized = Object.fromEntries(
+          Object.entries(data).map(([k, v]) => [k, typeof v === "object" && v !== null && "key" in v ? normalizeSource(v) : v])
+        );
+        setMappingConfig(normalized);
+        setOriginalMappingConfig(normalized);
       } else {
         setOriginalMappingConfig(null);
       }

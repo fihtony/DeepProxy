@@ -43,10 +43,10 @@ class RequestService {
         query_params: requestData.query_params ? JSON.stringify(requestData.query_params) : null,
         headers: requestData.headers ? JSON.stringify(requestData.headers) : null,
         body: requestData.body ? JSON.stringify(requestData.body) : null,
-        app_version: requestData.app_version || null,
-        app_language: requestData.app_language || null,
-        app_platform: requestData.app_platform || null,
-        app_environment: requestData.app_environment || null,
+        app_version: requestData.app_version ?? "",
+        app_language: requestData.app_language ?? "",
+        app_platform: requestData.app_platform ?? "",
+        app_environment: requestData.app_environment ?? "",
       };
 
       const created = await this.requestRepo.create(record);

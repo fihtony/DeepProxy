@@ -231,22 +231,14 @@ class MobileHeaderExtractionInterceptor extends RequestInterceptor {
       // Config manager not available
     }
 
-    // Extract using configured mappings
+    // Extract using configured mappings; use "" when not configured to avoid null in DB
     if (configManager && configManager.isInitialized()) {
       const mappedValues = configManager.extractAllMappedValues(headers, queryParams);
 
-      if (mappedValues.app_version) {
-        context.setMetadata("appVersion", mappedValues.app_version);
-      }
-      if (mappedValues.app_environment) {
-        context.setMetadata("appEnvironment", mappedValues.app_environment);
-      }
-      if (mappedValues.app_platform) {
-        context.setMetadata("appPlatform", mappedValues.app_platform);
-      }
-      if (mappedValues.app_language) {
-        context.setMetadata("appLanguage", mappedValues.app_language);
-      }
+      context.setMetadata("appVersion", mappedValues.app_version ?? "");
+      context.setMetadata("appEnvironment", mappedValues.app_environment ?? "");
+      context.setMetadata("appPlatform", mappedValues.app_platform ?? "");
+      context.setMetadata("appLanguage", mappedValues.app_language ?? "");
     } else {
       logger.error("[MobileHeaderExtraction] TrafficConfigManager not initialized!!!");
     }
@@ -347,10 +339,9 @@ class HeaderNormalizationInterceptor extends RequestInterceptor {
       }
     });
 
-    // Remove host header - it will be set correctly by HttpForwarder based on target URL
-    // The original host header is from the proxy (localhost:8080), not the backend
-    // HttpForwarder will let axios derive the correct Host header from the target URL
-    context.removeHeader("host");
+    // Do not remove Host: it is needed for monitor criteria (RequestTypeDetector) when
+    // Source=Header, Key=host. In HTTPS interception the client sends the real host (e.g. eshop.tarch.ca).
+    // HttpForwarder sets Host on the outgoing request from the target URL when forwarding.
 
     return context;
   }
