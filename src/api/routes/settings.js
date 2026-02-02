@@ -517,6 +517,7 @@ function initializeRoutes() {
     try {
       const fs = require("fs");
       const path = require("path");
+      const crypto = require("crypto");
 
       const certPath = path.join(__dirname, "../../../data/certs/ca.cert.pem");
 
@@ -531,6 +532,13 @@ function initializeRoutes() {
       }
 
       const stats = fs.statSync(certPath);
+      const certContent = fs.readFileSync(certPath, "utf-8");
+
+      // Compute SHA256 hash of the certificate file
+      const sha256Hash = crypto.createHash("sha256").update(certContent).digest("hex");
+
+      // Also compute SHA1 for verification purposes (commonly used)
+      const sha1Hash = crypto.createHash("sha1").update(certContent).digest("hex");
 
       res.json({
         success: true,
@@ -540,6 +548,8 @@ function initializeRoutes() {
           downloadUrl: "/api/settings/proxy/ca-cert",
           size: stats.size,
           modifiedAt: stats.mtime.toISOString(),
+          sha256: sha256Hash,
+          sha1: sha1Hash,
         },
       });
     } catch (error) {
@@ -911,19 +921,19 @@ function initializeRoutes() {
                   importResults[type] = { success: false, error: "endpointRules must be an array" };
                   break;
                 }
-                
+
                 if (overwrite) {
                   // Clear all existing rules if overwrite is true
                   const deleteStmt = db.prepare("DELETE FROM endpoint_matching_config");
                   deleteStmt.run();
                 }
-                
+
                 // Import new rules
                 let importedCount = 0;
                 if (configs[type].length > 0) {
                   const { getLocalISOString } = require("../../utils/datetimeUtils");
                   const now = getLocalISOString();
-                  
+
                   const insertStmt = db.prepare(`
                     INSERT INTO endpoint_matching_config (
                       endpoint_pattern,
@@ -943,18 +953,24 @@ function initializeRoutes() {
                       updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                   `);
-                  
+
                   for (const rule of configs[type]) {
                     // Convert boolean fields back to 0/1 for database
-                    const matchHeadersStr = Array.isArray(rule.match_headers) 
-                      ? JSON.stringify(rule.match_headers) 
-                      : (typeof rule.match_headers === 'string' ? rule.match_headers : null);
-                    const matchQueryParamsStr = Array.isArray(rule.match_query_params) 
-                      ? JSON.stringify(rule.match_query_params) 
-                      : (typeof rule.match_query_params === 'string' ? rule.match_query_params : null);
-                    const matchBodyStr = Array.isArray(rule.match_body) 
-                      ? JSON.stringify(rule.match_body) 
-                      : (typeof rule.match_body === 'string' ? rule.match_body : null);
+                    const matchHeadersStr = Array.isArray(rule.match_headers)
+                      ? JSON.stringify(rule.match_headers)
+                      : typeof rule.match_headers === "string"
+                        ? rule.match_headers
+                        : null;
+                    const matchQueryParamsStr = Array.isArray(rule.match_query_params)
+                      ? JSON.stringify(rule.match_query_params)
+                      : typeof rule.match_query_params === "string"
+                        ? rule.match_query_params
+                        : null;
+                    const matchBodyStr = Array.isArray(rule.match_body)
+                      ? JSON.stringify(rule.match_body)
+                      : typeof rule.match_body === "string"
+                        ? rule.match_body
+                        : null;
 
                     insertStmt.run(
                       rule.endpoint_pattern,
@@ -971,7 +987,7 @@ function initializeRoutes() {
                       rule.enabled !== false ? 1 : 0,
                       rule.type || "replay",
                       rule.created_at || now,
-                      rule.updated_at || now
+                      rule.updated_at || now,
                     );
                     importedCount++;
                   }

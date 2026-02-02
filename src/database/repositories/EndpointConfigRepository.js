@@ -23,8 +23,10 @@ class EndpointConfigRepository extends BaseRepository {
    */
   async createConfig(configData) {
     const data = {
+      regex: configData.regex ? 1 : 0,
       endpoint_pattern: configData.endpointPattern,
       http_method: configData.httpMethod || "*",
+      override: configData.override ? 1 : 0,
       match_version: configData.matchVersion ? 1 : 0,
       match_language: configData.matchLanguage ? 1 : 0,
       match_platform: configData.matchPlatform ? 1 : 0,
@@ -34,6 +36,7 @@ class EndpointConfigRepository extends BaseRepository {
       priority: configData.priority || 0,
       enabled: configData.enabled !== false ? 1 : 0,
       description: configData.description || null,
+      type: configData.type || "both",
     };
 
     return await this.create(data);
@@ -54,14 +57,24 @@ class EndpointConfigRepository extends BaseRepository {
 
   /**
    * Find all enabled configurations
-   * @param {string} type - Optional type filter ('replay' or 'recording')
+   * @param {string} type - Optional type filter ('replay', 'recording', or 'both')
+   *                        When type is 'replay' or 'recording', also includes 'both' type rules
    * @returns {Promise<Array>} Array of enabled configurations
    */
   async findAllEnabled(type = null) {
     const conditions = { enabled: 1 };
-    if (type) {
-      conditions.type = type;
+
+    // Build SQL with type filter that includes 'both' type
+    if (type && (type === "replay" || type === "recording")) {
+      // For replay or recording mode, fetch both the specific type and 'both' type rules
+      const sql = `
+        SELECT * FROM ${this.tableName}
+        WHERE enabled = 1 AND (type = ? OR type = 'both')
+        ORDER BY priority ASC
+      `;
+      return await this.db.all(sql, [type]);
     }
+
     return await this.findBy(conditions, {
       orderBy: "priority",
       orderDir: "ASC", // Lower priority value = higher priority (matched first)
@@ -70,13 +83,11 @@ class EndpointConfigRepository extends BaseRepository {
 
   /**
    * Find matching configuration for request
-   * Supports both exact matching and fuzzy matching with endpoint patterns
+   * Supports exact matching, pattern matching, and regex matching
    * @param {string} method - HTTP method
    * @param {string} path - Request path
    * @param {string} type - Optional type filter ('replay' or 'recording')
-   * @param {Object} options - Optional matching options
-   *   - endpointPatterns: Array of global endpoint patterns for fuzzy matching
-   *   - fuzzyPatterns: Pre-computed fuzzy patterns from global rules
+   * @param {Object} options - Optional matching options (no longer uses fuzzyPatterns)
    * @returns {Promise<Object|null>} Matching configuration or null
    */
   async findMatchingConfig(method, path, type = null, options = null) {
@@ -88,29 +99,50 @@ class EndpointConfigRepository extends BaseRepository {
     // Try exact method match first, then wildcard
     for (const config of configs) {
       if (config.http_method === method || config.http_method === "*") {
-        // Try exact pattern match first
-        if (this._matchesPattern(path, config.endpoint_pattern)) {
-          return config;
-        }
-
-        // If fuzzy patterns provided (from global endpoint matching rules),
-        // try fuzzy matching using SQL GLOB
-        if (options?.fuzzyPatterns && options.fuzzyPatterns.length > 0) {
-          for (const fuzzyPattern of options.fuzzyPatterns) {
-            if (this._matchesGlobPattern(config.endpoint_pattern, fuzzyPattern)) {
-              logger.debug("[EndpointConfigRepository] Matched config via fuzzy pattern", {
-                configId: config.id,
-                configPattern: config.endpoint_pattern,
-                fuzzyPattern: fuzzyPattern,
-              });
-              return config;
-            }
+        // Check if this config uses regex matching
+        if (config.regex === 1) {
+          // Use regex matching
+          if (this._matchesRegex(path, config.endpoint_pattern)) {
+            logger.debug("[EndpointConfigRepository] Matched config via regex", {
+              configId: config.id,
+              configPattern: config.endpoint_pattern,
+              path: path,
+            });
+            return config;
+          }
+        } else {
+          // Use exact/pattern matching (default)
+          if (this._matchesPattern(path, config.endpoint_pattern)) {
+            return config;
           }
         }
       }
     }
 
     return null;
+  }
+
+  /**
+   * Check if path matches a regex pattern
+   * @param {string} path - Request path to match
+   * @param {string} pattern - Regex pattern from config
+   * @returns {boolean} True if path matches the regex pattern
+   * @private
+   */
+  _matchesRegex(path, pattern) {
+    try {
+      // Create regex from pattern - add ^ and $ for full path matching
+      const regex = new RegExp(`^${pattern}$`);
+      return regex.test(path);
+    } catch (err) {
+      // Invalid regex pattern, return false
+      const logger = require("../../utils/logger");
+      logger.warn("[EndpointConfigRepository] Invalid regex pattern", {
+        pattern: pattern,
+        error: err.message,
+      });
+      return false;
+    }
   }
 
   /**
@@ -137,6 +169,12 @@ class EndpointConfigRepository extends BaseRepository {
   async updateConfig(configId, updates) {
     const data = {};
 
+    if (updates.regex !== undefined) {
+      data.regex = updates.regex ? 1 : 0;
+    }
+    if (updates.override !== undefined) {
+      data.override = updates.override ? 1 : 0;
+    }
     if (updates.matchVersion !== undefined) {
       data.match_version = updates.matchVersion ? 1 : 0;
     }
@@ -163,6 +201,9 @@ class EndpointConfigRepository extends BaseRepository {
     }
     if (updates.description !== undefined) {
       data.description = updates.description;
+    }
+    if (updates.type !== undefined) {
+      data.type = updates.type;
     }
 
     // Always update the updated_at timestamp when modifying a configuration

@@ -24,10 +24,13 @@ import {
   MenuItem,
   Alert,
   Switch,
+  Checkbox,
   Tooltip,
   Autocomplete,
   Grid,
   Chip,
+  Divider,
+  FormControlLabel,
 } from "@mui/material";
 import {
   Edit as EditIcon,
@@ -38,6 +41,8 @@ import {
   FiberManualRecord as RecordIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
+  Help as HelpIcon,
+  Sync as BothIcon,
 } from "@mui/icons-material";
 import {
   fetchConfigs,
@@ -76,15 +81,16 @@ const EndpointManagement = () => {
   }, [availableEndpoints]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogType, setDialogType] = useState("replay"); // 'replay' or 'recording'
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetConfig, setDeleteTargetConfig] = useState(null);
   const [selectedConfig, setSelectedConfig] = useState(null);
   const [endpointFilter, setEndpointFilter] = useState(""); // Endpoint text filter for table
   const [formData, setFormData] = useState({
+    regex: false,
     http_method: "",
     endpoint_pattern: "",
     match_query_params: "",
+    override: false,
     match_version: false,
     match_language: true,
     match_platform: true,
@@ -94,7 +100,7 @@ const EndpointManagement = () => {
     match_response_status: "2xx",
     priority: 10,
     enabled: true,
-    type: "replay",
+    type: "both",
   });
 
   // Track initialization to prevent double fetch in StrictMode
@@ -145,16 +151,17 @@ const EndpointManagement = () => {
     return configs.filter((config) => config.endpoint_pattern.toLowerCase().includes(filterLower));
   }, [configs, endpointFilter]);
 
-  const handleOpenDialog = (config = null, ruleType = "replay") => {
+  const handleOpenDialog = (config = null) => {
     if (config) {
       // Editing existing config
-      const configType = config.type || "replay";
-      setDialogType(configType);
+      const configType = config.type || "both";
       setSelectedConfig(config);
       setFormData({
+        regex: config.regex === 1,
         http_method: config.http_method || "",
         endpoint_pattern: config.endpoint_pattern || "",
         match_query_params: config.match_query_params ? JSON.parse(config.match_query_params).join(", ") : "",
+        override: config.override === 1,
         match_version: config.match_version === 1,
         match_language: config.match_language === 1,
         match_platform: config.match_platform === 1,
@@ -167,39 +174,38 @@ const EndpointManagement = () => {
         type: configType,
       });
     } else {
-      // Adding new config - use defaults from proxy config for replay rules
-      setDialogType(ruleType);
+      // Adding new config - default to "both" type
       setSelectedConfig(null);
-      const isRecording = ruleType === "recording";
       setFormData({
+        regex: false,
         http_method: "",
         endpoint_pattern: "",
         match_query_params: "",
-        // For recording: always Exact (true). For replay: use proxy config defaults
-        match_version: isRecording ? true : replayDefaults.match_version === 1,
-        match_language: isRecording ? true : replayDefaults.match_language === 1,
-        match_platform: isRecording ? true : replayDefaults.match_platform === 1,
-        match_environment: isRecording ? "exact" : replayDefaults.match_environment,
+        override: false, // Default to inherit from proxy config
+        // When override is false, these values won't be used; UI shows "Inherit" for "both" type
+        match_version: replayDefaults.match_version === 1,
+        match_language: replayDefaults.match_language === 1,
+        match_platform: replayDefaults.match_platform === 1,
+        match_environment: replayDefaults.match_environment,
         match_headers: "",
         match_body: "",
         match_response_status: "2xx",
         priority: 10,
         enabled: true,
-        type: ruleType,
+        type: "both",
       });
     }
-    // Remove redundant API call - data is already loaded on page init
     setDialogOpen(true);
   };
 
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setSelectedConfig(null);
-    setDialogType("replay");
   };
 
   const handleSave = async () => {
     const data = {
+      regex: formData.regex,
       http_method: formData.http_method,
       endpoint_pattern: formData.endpoint_pattern,
       match_query_params: formData.match_query_params
@@ -207,9 +213,10 @@ const EndpointManagement = () => {
             formData.match_query_params
               .split(",")
               .map((s) => s.trim())
-              .filter((s) => s)
+              .filter((s) => s),
           )
         : null,
+      override: formData.override,
       match_version: formData.match_version,
       match_language: formData.match_language,
       match_platform: formData.match_platform,
@@ -219,7 +226,7 @@ const EndpointManagement = () => {
             formData.match_headers
               .split(",")
               .map((s) => s.trim())
-              .filter((s) => s)
+              .filter((s) => s),
           )
         : null,
       match_body: formData.match_body
@@ -227,13 +234,13 @@ const EndpointManagement = () => {
             formData.match_body
               .split(",")
               .map((s) => s.trim())
-              .filter((s) => s)
+              .filter((s) => s),
           )
         : null,
-      match_response_status: dialogType === "recording" ? "2xx" : formData.match_response_status,
+      match_response_status: formData.type === "recording" ? "2xx" : formData.match_response_status,
       priority: formData.priority !== "" && !isNaN(parseInt(formData.priority, 10)) ? parseInt(formData.priority, 10) : 10,
       enabled: formData.enabled,
-      type: dialogType,
+      type: formData.type,
     };
 
     if (selectedConfig) {
@@ -243,6 +250,38 @@ const EndpointManagement = () => {
     }
     handleCloseDialog();
     dispatch(fetchConfigs());
+  };
+
+  // Handle rule type change
+  const handleRuleTypeChange = (newType) => {
+    const isRecording = newType === "recording";
+    setFormData({
+      ...formData,
+      type: newType,
+      // For recording: override is always false and disabled
+      override: isRecording ? false : formData.override,
+    });
+  };
+
+  // Handle override toggle
+  const handleOverrideToggle = (checked) => {
+    if (checked) {
+      // Enable override: use replay defaults
+      setFormData({
+        ...formData,
+        override: true,
+        match_version: replayDefaults.match_version === 1,
+        match_language: replayDefaults.match_language === 1,
+        match_platform: replayDefaults.match_platform === 1,
+        match_environment: replayDefaults.match_environment,
+      });
+    } else {
+      // Disable override: values become "Inherit" (still store the replay defaults but UI shows Inherit)
+      setFormData({
+        ...formData,
+        override: false,
+      });
+    }
   };
 
   const handleToggle = async (id, currentEnabled) => {
@@ -331,7 +370,11 @@ const EndpointManagement = () => {
   };
 
   // Truncate endpoint path: keep the end, add ... at the beginning if truncated
-  const truncateEndpointPath = (path, maxLength = 45) => {
+  const truncateEndpointPath = (regex, path, maxLength = 45) => {
+    if (regex) {
+      maxLength -= 3; // Adjust for "RE: " prefix
+    }
+
     if (path.length <= maxLength) {
       return path;
     }
@@ -361,19 +404,42 @@ const EndpointManagement = () => {
     fontSize: "0.75rem",
   };
 
-  // Get dialog title based on type and edit mode
+  // Get dialog title based on edit mode
   const getDialogTitle = () => {
-    if (selectedConfig) {
-      return dialogType === "recording" ? "Edit Recording Rule" : "Edit Replay Rule";
-    }
-    return dialogType === "recording" ? "Add Recording Rule" : "Add Replay Rule";
+    return selectedConfig ? "Edit Matching Rule" : "Add Matching Rule";
   };
 
-  // Check if a field should be disabled for recording rules
-  const isRecordingDisabledField = (fieldName) => {
-    if (dialogType !== "recording") return false;
-    const disabledFields = ["match_platform", "match_version", "match_environment", "match_language", "match_headers"];
-    return disabledFields.includes(fieldName);
+  // Check if matching fields should be disabled (for recording type or when override is off)
+  const isMatchingFieldDisabled = () => {
+    return formData.type === "recording" || !formData.override;
+  };
+
+  // Get the display value for matching fields based on type and override
+  // Returns { value, isInherit } for determining what to display
+  const getMatchingFieldDisplay = (fieldName) => {
+    if (formData.type === "recording") {
+      return "Exact"; // Recording always uses exact match
+    }
+    if (!formData.override) {
+      if (formData.type === "replay") {
+        // Replay type without override: show replayDefaults values (greyed out)
+        switch (fieldName) {
+          case "match_version":
+            return replayDefaults.match_version === 1 ? "exact" : "closest";
+          case "match_language":
+            return replayDefaults.match_language === 1 ? "exact" : "any";
+          case "match_platform":
+            return replayDefaults.match_platform === 1 ? "exact" : "any";
+          case "match_environment":
+            return replayDefaults.match_environment || "exact";
+          default:
+            return null;
+        }
+      }
+      // "both" type without override: show Inherit
+      return "Inherit";
+    }
+    return null; // Use actual form value
   };
 
   return (
@@ -415,21 +481,8 @@ const EndpointManagement = () => {
               <RefreshIcon />
             </IconButton>
           </Tooltip>
-          <Button
-            variant="outlined"
-            startIcon={<RecordIcon sx={{ color: "#d32f2f" }} />}
-            onClick={() => handleOpenDialog(null, "recording")}
-            sx={{
-              mr: 1,
-              borderColor: "#d32f2f",
-              color: "#d32f2f",
-              "&:hover": { borderColor: "#b71c1c", backgroundColor: "rgba(211, 47, 47, 0.04)" },
-            }}
-          >
-            Add Recording Rule
-          </Button>
-          <Button variant="contained" startIcon={<ReplayIcon />} onClick={() => handleOpenDialog(null, "replay")}>
-            Add Replay Rule
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog(null)}>
+            Add Rule
           </Button>
         </Box>
       </Box>
@@ -472,30 +525,38 @@ const EndpointManagement = () => {
             ) : filteredConfigs.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={14} align="center">
-                  {endpointFilter
-                    ? "No matching configurations found."
-                    : 'No configurations found. Click "Add Replay Rule" or "Add Recording Rule" to create one.'}
+                  {endpointFilter ? "No matching configurations found." : 'No configurations found. Click "Add Rule" to create one.'}
                 </TableCell>
               </TableRow>
             ) : (
               filteredConfigs.map((config) => {
                 const isRecording = config.type === "recording";
+                const isBoth = config.type === "both";
+                const isReplay = config.type === "replay";
+                // Determine row background based on type
+                const getRowBackground = () => {
+                  if (isBoth) return "inherit";
+                  if (isRecording) return "rgba(249, 145, 145, 0.08)"; // light red for recording
+                  return "rgba(89, 181, 247, 0.1)"; // light blue for replay
+                };
                 return (
                   <TableRow
                     key={config.id}
                     hover
                     sx={{
                       height: "32px",
-                      backgroundColor: isRecording ? "inherit" : "rgba(26, 244, 70, 0.1)",
+                      backgroundColor: getRowBackground(),
                       "&:hover": {
-                        backgroundColor: isRecording ? undefined : "rgba(26, 244, 70, 0.2) !important",
+                        backgroundColor: "rgba(26, 244, 70, 0.2) !important",
                       },
                     }}
                   >
                     <TableCell sx={{ ...tableCellStyle, textAlign: "center", padding: "4px" }}>
-                      <Tooltip title={isRecording ? "Recording Rule" : "Replay Rule"} arrow>
+                      <Tooltip title={isBoth ? "Both (Recording & Replay)" : isRecording ? "Recording Only" : "Replay Only"} arrow>
                         <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
-                          {isRecording ? (
+                          {isBoth ? (
+                            <BothIcon sx={{ color: "#9c27b0", fontSize: "1.2rem" }} />
+                          ) : isRecording ? (
                             <RecordIcon sx={{ color: "#d32f2f", fontSize: "1.2rem" }} />
                           ) : (
                             <ReplayIcon sx={{ color: "#1976d2", fontSize: "1.2rem" }} />
@@ -515,22 +576,53 @@ const EndpointManagement = () => {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      <Tooltip title={config.endpoint_pattern}>
-                        <span style={{ fontFamily: "monospace", fontSize: "0.85rem", display: "inline-block" }}>
-                          {truncateEndpointPath(config.endpoint_pattern)}
-                        </span>
-                      </Tooltip>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        {config.regex === 1 && (
+                          <Tooltip title="Regex matching enabled">
+                            <Typography
+                              component="span"
+                              sx={{
+                                fontSize: "0.6rem",
+                                fontWeight: "bold",
+                                color: "primary.contrastText",
+                                backgroundColor: "primary.light",
+                                px: 0.5,
+                                py: 0.1,
+                                borderRadius: 0.5,
+                                opacity: 0.8,
+                              }}
+                            >
+                              RE
+                            </Typography>
+                          </Tooltip>
+                        )}
+                        <Tooltip title={config.endpoint_pattern}>
+                          <span style={{ fontFamily: "monospace", fontSize: "0.85rem", display: "inline-block" }}>
+                            {truncateEndpointPath(config.regex, config.endpoint_pattern)}
+                          </span>
+                        </Tooltip>
+                      </Box>
                     </TableCell>
                     <TableCell sx={arrayFieldCellStyle}>
                       <Tooltip title={parseJsonArray(config.match_query_params)}>
                         <span>{formatArrayDisplay(config.match_query_params)}</span>
                       </Tooltip>
                     </TableCell>
-                    <TableCell sx={tableCellStyle}>{formatMatchSetting(config.match_version, "Exact", "Closest")}</TableCell>
-                    <TableCell sx={tableCellStyle}>{formatMatchSetting(config.match_language, "Exact", "Any")}</TableCell>
-                    <TableCell sx={tableCellStyle}>{formatMatchSetting(config.match_platform, "Exact", "Any")}</TableCell>
                     <TableCell sx={tableCellStyle}>
-                      {config.match_environment === "exact" ? "Exact" : config.match_environment.toUpperCase()}
+                      {config.override === 0 && isBoth ? "Inherit" : formatMatchSetting(config.match_version, "Exact", "Closest")}
+                    </TableCell>
+                    <TableCell sx={tableCellStyle}>
+                      {config.override === 0 && isBoth ? "Inherit" : formatMatchSetting(config.match_language, "Exact", "Any")}
+                    </TableCell>
+                    <TableCell sx={tableCellStyle}>
+                      {config.override === 0 && isBoth ? "Inherit" : formatMatchSetting(config.match_platform, "Exact", "Any")}
+                    </TableCell>
+                    <TableCell sx={tableCellStyle}>
+                      {config.override === 0 && isBoth
+                        ? "Inherit"
+                        : config.match_environment === "exact"
+                          ? "Exact"
+                          : config.match_environment.toUpperCase()}
                     </TableCell>
                     <TableCell sx={arrayFieldCellStyle}>
                       <Tooltip title={parseJsonArray(config.match_headers)}>
@@ -575,6 +667,50 @@ const EndpointManagement = () => {
         <DialogContent>
           <Box pt={2}>
             <Grid container spacing={2}>
+              {/* Row 1: Rule Type, Priority, Enabled toggle */}
+              <Grid item xs={12} sm={4}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Rule Type</InputLabel>
+                  <Select value={formData.type} label="Rule Type" onChange={(e) => handleRuleTypeChange(e.target.value)}>
+                    <MenuItem value="both">Both (Recording & Replay)</MenuItem>
+                    <MenuItem value="recording">Recording Only</MenuItem>
+                    <MenuItem value="replay">Replay Only</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Box display="flex" alignItems="center" gap={0.5}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="number"
+                    label="Priority"
+                    value={formData.priority}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const numVal = val === "" ? 10 : parseInt(val, 10);
+                      setFormData({ ...formData, priority: isNaN(numVal) ? 10 : numVal });
+                    }}
+                    inputProps={{ min: 0, step: 1 }}
+                  />
+                  <Tooltip title="Lower value = higher priority (0, 1, 2, ...)" arrow>
+                    <HelpIcon sx={{ color: "action.active", fontSize: "1.2rem", cursor: "help" }} />
+                  </Tooltip>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Box display="flex" alignItems="center" justifyContent="flex-end" height="100%">
+                  <FormControlLabel
+                    control={
+                      <Switch checked={formData.enabled} onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })} />
+                    }
+                    label="Enabled"
+                    labelPlacement="end"
+                    sx={{ ml: 0, mr: 1 }}
+                  />
+                </Box>
+              </Grid>
+
               {/* HTTP Method */}
               <Grid item xs={12} sm={4}>
                 <FormControl fullWidth size="small">
@@ -592,8 +728,42 @@ const EndpointManagement = () => {
                 </FormControl>
               </Grid>
 
-              {/* Endpoint Path */}
+              {/* Query Params with help icon */}
               <Grid item xs={12} sm={8}>
+                <Box display="flex" alignItems="flex-start" gap={0.5}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Query Params (comma-separated keys)"
+                    value={formData.match_query_params}
+                    onChange={(e) => setFormData({ ...formData, match_query_params: e.target.value })}
+                    placeholder="e.g., userId, deviceId"
+                  />
+                  <Tooltip title="Leave empty to match all query params exactly" arrow>
+                    <HelpIcon sx={{ color: "action.active", fontSize: "1.2rem", cursor: "help", mt: 1 }} />
+                  </Tooltip>
+                </Box>
+              </Grid>
+
+              {/* Endpoint Path */}
+              <Grid item xs={12} sm={1}>
+                <Box display="flex" alignItems="left" height="100%" pl={0} pr={0}>
+                  <Tooltip title="Use regex pattern matching instead of exact match" arrow>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={formData.regex}
+                          onChange={(e) => setFormData({ ...formData, regex: e.target.checked })}
+                          size="small"
+                        />
+                      }
+                      label="Regex"
+                      sx={{ pr: 0 }}
+                    />
+                  </Tooltip>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={11}>
                 <Autocomplete
                   freeSolo
                   size="small"
@@ -606,81 +776,183 @@ const EndpointManagement = () => {
                     return options.filter((option) => option.toLowerCase().includes(filterValue));
                   }}
                   noOptionsText="No endpoints found"
-                  renderInput={(params) => <TextField {...params} label="Endpoint Path *" placeholder="Type to search..." />}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      sx={{ ml: 2, pr: 2 }}
+                      label={formData.regex ? "Endpoint Pattern (Regex) *" : "Endpoint Pattern *"}
+                      placeholder={formData.regex ? "e.g., /api/users/[0-9]+" : "Type to search..."}
+                    />
+                  )}
                 />
               </Grid>
 
-              {/* Query Params */}
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Query Params (comma-separated keys)"
-                  value={formData.match_query_params}
-                  onChange={(e) => setFormData({ ...formData, match_query_params: e.target.value })}
-                  placeholder="e.g., userId, deviceId (empty = exact match all)"
-                  helperText="Leave empty to match all query params exactly"
-                />
-              </Grid>
+              {/* Override toggle - only show for non-recording types */}
+              {formData.type !== "recording" && (
+                <Grid item xs={12}>
+                  <Box display="flex" alignItems="center" gap={2}>
+                    <FormControlLabel
+                      control={<Switch checked={formData.override} onChange={(e) => handleOverrideToggle(e.target.checked)} />}
+                      label="Override Matching Settings"
+                    />
+                    {formData.override && formData.type === "both" && (
+                      <Alert severity="info" sx={{ py: 0, fontSize: "0.8rem" }}>
+                        Override only applies to REPLAY mode
+                      </Alert>
+                    )}
+                  </Box>
+                </Grid>
+              )}
 
-              {/* Platform */}
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small" disabled={isRecordingDisabledField("match_platform")}>
-                  <InputLabel>Platform Matching</InputLabel>
+              {/* Matching fields with conditional display */}
+              <Grid item xs={12} sm={3}>
+                <FormControl fullWidth size="small" disabled={isMatchingFieldDisabled()}>
+                  <InputLabel>Version</InputLabel>
                   <Select
-                    value={formData.match_platform ? "exact" : "any"}
-                    label="Platform Matching"
-                    onChange={(e) => setFormData({ ...formData, match_platform: e.target.value === "exact" })}
-                  >
-                    <MenuItem value="exact">Exact</MenuItem>
-                    <MenuItem value="any">Any</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* App Version */}
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small" disabled={isRecordingDisabledField("match_version")}>
-                  <InputLabel>App Version Matching</InputLabel>
-                  <Select
-                    value={formData.match_version ? "exact" : "closest"}
-                    label="App Version Matching"
+                    value={getMatchingFieldDisplay("match_version") || (formData.match_version ? "exact" : "closest")}
+                    label="Version"
                     onChange={(e) => setFormData({ ...formData, match_version: e.target.value === "exact" })}
                   >
-                    <MenuItem value="closest">Closest</MenuItem>
-                    <MenuItem value="exact">Exact</MenuItem>
+                    {isMatchingFieldDisabled() && formData.type === "recording" ? (
+                      <MenuItem value="Exact">Exact</MenuItem>
+                    ) : isMatchingFieldDisabled() && formData.type === "both" ? (
+                      <MenuItem value="Inherit">Inherit</MenuItem>
+                    ) : isMatchingFieldDisabled() && formData.type === "replay" ? (
+                      [
+                        <MenuItem key="closest" value="closest">
+                          Closest
+                        </MenuItem>,
+                        <MenuItem key="exact" value="exact">
+                          Exact
+                        </MenuItem>,
+                      ]
+                    ) : (
+                      [
+                        <MenuItem key="closest" value="closest">
+                          Closest
+                        </MenuItem>,
+                        <MenuItem key="exact" value="exact">
+                          Exact
+                        </MenuItem>,
+                      ]
+                    )}
                   </Select>
                 </FormControl>
               </Grid>
 
-              {/* Environment */}
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small" disabled={isRecordingDisabledField("match_environment")}>
-                  <InputLabel>Environment Matching</InputLabel>
+              <Grid item xs={12} sm={3}>
+                <FormControl fullWidth size="small" disabled={isMatchingFieldDisabled()}>
+                  <InputLabel>Language</InputLabel>
                   <Select
-                    value={formData.match_environment}
-                    label="Environment Matching"
-                    onChange={(e) => setFormData({ ...formData, match_environment: e.target.value })}
-                  >
-                    <MenuItem value="exact">Exact</MenuItem>
-                    <MenuItem value="dev">Dev</MenuItem>
-                    <MenuItem value="sit">Sit</MenuItem>
-                    <MenuItem value="stage">Stage</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* Language */}
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small" disabled={isRecordingDisabledField("match_language")}>
-                  <InputLabel>Language Matching</InputLabel>
-                  <Select
-                    value={formData.match_language ? "exact" : "any"}
-                    label="Language Matching"
+                    value={getMatchingFieldDisplay("match_language") || (formData.match_language ? "exact" : "any")}
+                    label="Language"
                     onChange={(e) => setFormData({ ...formData, match_language: e.target.value === "exact" })}
                   >
-                    <MenuItem value="exact">Exact</MenuItem>
-                    <MenuItem value="any">Any</MenuItem>
+                    {isMatchingFieldDisabled() && formData.type === "recording" ? (
+                      <MenuItem value="Exact">Exact</MenuItem>
+                    ) : isMatchingFieldDisabled() && formData.type === "both" ? (
+                      <MenuItem value="Inherit">Inherit</MenuItem>
+                    ) : isMatchingFieldDisabled() && formData.type === "replay" ? (
+                      [
+                        <MenuItem key="exact" value="exact">
+                          Exact
+                        </MenuItem>,
+                        <MenuItem key="any" value="any">
+                          Any
+                        </MenuItem>,
+                      ]
+                    ) : (
+                      [
+                        <MenuItem key="exact" value="exact">
+                          Exact
+                        </MenuItem>,
+                        <MenuItem key="any" value="any">
+                          Any
+                        </MenuItem>,
+                      ]
+                    )}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={3}>
+                <FormControl fullWidth size="small" disabled={isMatchingFieldDisabled()}>
+                  <InputLabel>Platform</InputLabel>
+                  <Select
+                    value={getMatchingFieldDisplay("match_platform") || (formData.match_platform ? "exact" : "any")}
+                    label="Platform"
+                    onChange={(e) => setFormData({ ...formData, match_platform: e.target.value === "exact" })}
+                  >
+                    {isMatchingFieldDisabled() && formData.type === "recording" ? (
+                      <MenuItem value="Exact">Exact</MenuItem>
+                    ) : isMatchingFieldDisabled() && formData.type === "both" ? (
+                      <MenuItem value="Inherit">Inherit</MenuItem>
+                    ) : isMatchingFieldDisabled() && formData.type === "replay" ? (
+                      [
+                        <MenuItem key="exact" value="exact">
+                          Exact
+                        </MenuItem>,
+                        <MenuItem key="any" value="any">
+                          Any
+                        </MenuItem>,
+                      ]
+                    ) : (
+                      [
+                        <MenuItem key="exact" value="exact">
+                          Exact
+                        </MenuItem>,
+                        <MenuItem key="any" value="any">
+                          Any
+                        </MenuItem>,
+                      ]
+                    )}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={3}>
+                <FormControl fullWidth size="small" disabled={isMatchingFieldDisabled()}>
+                  <InputLabel>Environment</InputLabel>
+                  <Select
+                    value={getMatchingFieldDisplay("match_environment") || formData.match_environment}
+                    label="Environment"
+                    onChange={(e) => setFormData({ ...formData, match_environment: e.target.value })}
+                  >
+                    {isMatchingFieldDisabled() && formData.type === "recording" ? (
+                      <MenuItem value="Exact">Exact</MenuItem>
+                    ) : isMatchingFieldDisabled() && formData.type === "both" ? (
+                      <MenuItem value="Inherit">Inherit</MenuItem>
+                    ) : isMatchingFieldDisabled() && formData.type === "replay" ? (
+                      [
+                        <MenuItem key="exact" value="exact">
+                          Exact
+                        </MenuItem>,
+                        <MenuItem key="dev" value="dev">
+                          Dev
+                        </MenuItem>,
+                        <MenuItem key="sit" value="sit">
+                          Sit
+                        </MenuItem>,
+                        <MenuItem key="stage" value="stage">
+                          Stage
+                        </MenuItem>,
+                      ]
+                    ) : (
+                      [
+                        <MenuItem key="exact" value="exact">
+                          Exact
+                        </MenuItem>,
+                        <MenuItem key="dev" value="dev">
+                          Dev
+                        </MenuItem>,
+                        <MenuItem key="sit" value="sit">
+                          Sit
+                        </MenuItem>,
+                        <MenuItem key="stage" value="stage">
+                          Stage
+                        </MenuItem>,
+                      ]
+                    )}
                   </Select>
                 </FormControl>
               </Grid>
@@ -693,9 +965,8 @@ const EndpointManagement = () => {
                   label="Headers (comma-separated keys)"
                   value={formData.match_headers}
                   onChange={(e) => setFormData({ ...formData, match_headers: e.target.value })}
-                  placeholder="e.g., x-correlation-id, x-traceability-id (empty = no header matching)"
+                  placeholder="e.g., x-correlation-id (empty = no header matching)"
                   helperText="Leave empty to skip additional header matching"
-                  disabled={isRecordingDisabledField("match_headers")}
                 />
               </Grid>
 
@@ -704,56 +975,37 @@ const EndpointManagement = () => {
                 <TextField
                   fullWidth
                   size="small"
-                  label="Body (comma-separated field paths)"
+                  label="Body Fields (comma-separated paths)"
                   value={formData.match_body}
                   onChange={(e) => setFormData({ ...formData, match_body: e.target.value })}
-                  placeholder="e.g., clientId, memberId, planNumber, address.city (empty = no body field matching)"
-                  helperText="Supports nested fields with dot notation (e.g., user.profile.memberId). Field order = priority."
+                  placeholder="e.g., clientId, memberId, address.city"
+                  helperText="Supports nested fields with dot notation. Field order = priority."
                 />
               </Grid>
 
-              {/* Response Status - only show for replay rules */}
-              {dialogType === "replay" && (
-                <Grid item xs={12} sm={4}>
-                  <Autocomplete
-                    freeSolo
-                    size="small"
-                    options={["2xx", "error", "200", "201", "400", "401", "403", "404", "500", "502", "503"]}
-                    value={formData.match_response_status}
-                    onChange={(e, value) => setFormData({ ...formData, match_response_status: value || "2xx" })}
-                    onInputChange={(e, value) => setFormData({ ...formData, match_response_status: value || "2xx" })}
-                    renderInput={(params) => <TextField {...params} label="Response Status" placeholder="2xx, error, or code" />}
-                  />
-                </Grid>
+              {/* Divider for REPLAY-only settings */}
+              {formData.type !== "recording" && (
+                <>
+                  <Grid item xs={12}>
+                    <Divider sx={{ my: 1 }}>
+                      <Chip label="Replay Mode Only" size="small" />
+                    </Divider>
+                  </Grid>
+
+                  {/* Response Status */}
+                  <Grid item xs={12} sm={6}>
+                    <Autocomplete
+                      freeSolo
+                      size="small"
+                      options={["2xx", "error", "200", "201", "400", "401", "403", "404", "500", "502", "503"]}
+                      value={formData.match_response_status}
+                      onChange={(e, value) => setFormData({ ...formData, match_response_status: value || "2xx" })}
+                      onInputChange={(e, value) => setFormData({ ...formData, match_response_status: value || "2xx" })}
+                      renderInput={(params) => <TextField {...params} label="Response Status" placeholder="2xx, error, or code" />}
+                    />
+                  </Grid>
+                </>
               )}
-
-              {/* Priority */}
-              <Grid item xs={12} sm={dialogType === "replay" ? 4 : 6}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label="Priority"
-                  value={formData.priority}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const numVal = val === "" ? 10 : parseInt(val, 10);
-                    setFormData({ ...formData, priority: isNaN(numVal) ? 10 : numVal });
-                  }}
-                  inputProps={{ min: 0, step: 1 }}
-                  helperText="Lower value = higher priority (0, 1, 2, ...)"
-                />
-              </Grid>
-
-              {/* Enabled */}
-              <Grid item xs={12} sm={dialogType === "replay" ? 4 : 6}>
-                <Box display="flex" alignItems="center" height="100%">
-                  <Typography variant="body2" sx={{ mr: 2 }}>
-                    Enabled:
-                  </Typography>
-                  <Switch checked={formData.enabled} onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })} />
-                </Box>
-              </Grid>
             </Grid>
           </Box>
         </DialogContent>
