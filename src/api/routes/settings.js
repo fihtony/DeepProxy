@@ -738,6 +738,8 @@ function initializeRoutes() {
           id,
           endpoint_pattern,
           http_method,
+          regex,
+          override,
           match_version,
           match_language,
           match_platform,
@@ -783,6 +785,8 @@ function initializeRoutes() {
           }
         }
         // Convert boolean fields from 0/1 to true/false
+        parsed.regex = parsed.regex === 1;
+        parsed.override = parsed.override === 1;
         parsed.match_version = parsed.match_version === 1;
         parsed.match_language = parsed.match_language === 1;
         parsed.match_platform = parsed.match_platform === 1;
@@ -938,6 +942,8 @@ function initializeRoutes() {
                     INSERT INTO endpoint_matching_config (
                       endpoint_pattern,
                       http_method,
+                      regex,
+                      override,
                       match_version,
                       match_language,
                       match_platform,
@@ -951,7 +957,7 @@ function initializeRoutes() {
                       type,
                       created_at,
                       updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                   `);
 
                   for (const rule of configs[type]) {
@@ -975,6 +981,8 @@ function initializeRoutes() {
                     insertStmt.run(
                       rule.endpoint_pattern,
                       rule.http_method,
+                      rule.regex === true || rule.regex === 1 ? 1 : 0,
+                      rule.override === true || rule.override === 1 ? 1 : 0,
                       rule.match_version === true || rule.match_version === 1 ? 1 : 0,
                       rule.match_language === true || rule.match_language === 1 ? 1 : 0,
                       rule.match_platform === true || rule.match_platform === 1 ? 1 : 0,
