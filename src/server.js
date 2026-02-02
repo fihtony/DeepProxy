@@ -54,6 +54,7 @@ const config = require("./config");
 class ProxyServer {
   constructor(options = {}) {
     this.port = options.port || config.proxy?.port || 8080;
+    this.host = options.host ?? config.server?.host ?? "0.0.0.0";
     this.targetBaseUrl = options.targetBaseUrl || config.proxy?.targetHost || "http://localhost:3000";
     this.db = null;
     this.modeService = null;
@@ -630,8 +631,9 @@ class ProxyServer {
           });
         });
 
-        this.server.listen(this.port, () => {
+        this.server.listen(this.port, this.host, () => {
           logger.info("Deep Proxy server started", {
+            host: this.host,
             port: this.port,
             mode: this.modeService.getCurrentMode(),
           });
