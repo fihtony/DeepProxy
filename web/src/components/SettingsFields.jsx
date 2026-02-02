@@ -15,7 +15,7 @@ import { Help as HelpIcon, CheckCircle as ValidIcon, Error as ErrorIcon } from "
  * @param {Object} props
  * @param {string} props.label - Field label
  * @param {string} props.description - Field description/tooltip
- * @param {Object} props.value - Current value { from, key, pattern }
+ * @param {Object} props.value - Current value { source, key, pattern }
  * @param {Function} props.onChange - Callback when value changes
  * @param {boolean} props.disabled - Whether the field is disabled
  * @param {boolean} props.fromDisabled - Whether the 'from' selector is disabled
@@ -26,7 +26,7 @@ import { Help as HelpIcon, CheckCircle as ValidIcon, Error as ErrorIcon } from "
 export function HeaderMappingField({
   label,
   description,
-  value = { from: "header", key: "", pattern: null },
+  value = { source: "header", key: "", pattern: null },
   onChange,
   disabled = false,
   fromDisabled = false,

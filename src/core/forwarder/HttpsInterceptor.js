@@ -353,7 +353,8 @@ class HttpsInterceptor {
         url: request.fullUrl,
         stack: error.stack,
       });
-      this._sendErrorResponse(tlsSocket, 502, "Bad Gateway", mockReq, startTime);
+      const errReq = { method: request?.method, path: request?.path, ip: tlsSocket?.remoteAddress };
+      this._sendErrorResponse(tlsSocket, 502, "Bad Gateway", errReq, startTime);
     }
   }
 

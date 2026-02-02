@@ -290,10 +290,10 @@ class ModeService {
         user_id: requestContext.getHeader("x-user-id") || null,
         method: requestContext.getMethod(),
         path: requestContext.getPath(),
-        app_version: requestContext.getHeader("x-app-version") || null,
-        app_language: requestContext.getHeader("x-app-language") || null,
-        app_platform: requestContext.getHeader("x-app-platform") || null,
-        app_environment: requestContext.getHeader("x-app-environment") || null,
+        app_version: requestContext.getHeader("x-app-version") ?? "",
+        app_language: requestContext.getHeader("x-app-language") ?? "",
+        app_platform: requestContext.getHeader("x-app-platform") ?? "",
+        app_environment: requestContext.getHeader("x-app-environment") ?? "",
       };
 
       return await this.matchingService.hasMatch(requestData);
@@ -315,10 +315,10 @@ class ModeService {
         user_id: requestContext.getHeader("x-user-id") || null,
         method: requestContext.getMethod(),
         path: requestContext.getPath(),
-        app_version: requestContext.getHeader("x-app-version") || null,
-        app_language: requestContext.getHeader("x-app-language") || null,
-        app_platform: requestContext.getHeader("x-app-platform") || null,
-        app_environment: requestContext.getHeader("x-app-environment") || null,
+        app_version: requestContext.getHeader("x-app-version") ?? "",
+        app_language: requestContext.getHeader("x-app-language") ?? "",
+        app_platform: requestContext.getHeader("x-app-platform") ?? "",
+        app_environment: requestContext.getHeader("x-app-environment") ?? "",
       };
 
       return await this.matchingService.findAllMatches(requestData, limit);
