@@ -19,39 +19,58 @@ const config = require("../config");
 const logDir = path.join(__dirname, "../../logs");
 
 /**
+ * Parse query params from request URL for monitor check
+ * @param {Object} req - Request with url, originalUrl
+ * @returns {Object} Query params object (key -> value)
+ */
+function _getQueryParamsFromReq(req) {
+  const url = req.originalUrl || req.url || "";
+  if (!url) return {};
+  try {
+    const hasProtocol = url.startsWith("http://") || url.startsWith("https://");
+    const urlStr = hasProtocol ? url : `http://_/${url}`;
+    const urlObj = new URL(urlStr);
+    const params = {};
+    urlObj.searchParams.forEach((value, key) => {
+      params[key] = value;
+    });
+    return params;
+  } catch (e) {
+    return {};
+  }
+}
+
+/**
  * Check if request is from monitored application and domain
+ * Uses TrafficConfigManager monitor config (source + key + pattern), not hardcoded user-agent.
  * Requires BOTH:
- * 1. User-Agent matches configured monitor pattern
- * 2. Request comes from a monitored domain
+ * 1. Request matches configured monitor (e.g. header "host" matches pattern "eshop.tarch.ca", or user-agent/query per config)
+ * 2. Request host is in monitored domains list
  * @param {Object} req - Request object with headers, url, originalUrl
  * @returns {boolean} True if request is from monitored app AND domain
  */
 function isMonitoredApp(req) {
-  const userAgent = req.headers["user-agent"] || "";
+  const headers = req.headers || {};
 
-  // Try to extract host from multiple sources:
-  // 1. headers.host (HTTP/1.1 standard)
-  // 2. headers[":authority"] (HTTP/2)
-  // 3. Extract from originalUrl/url (HTTP proxy protocol with full URL)
-  let host = req.headers.host || req.headers[":authority"];
-
+  // Extract host for domain check (headers.host, :authority, or from URL)
+  let host = headers.host || headers[":authority"];
   if (!host) {
-    // Prefer originalUrl over url for full URL extraction
     const url = req.originalUrl || req.url || "";
     if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
       try {
         const urlObj = new URL(url);
         host = urlObj.hostname;
       } catch (e) {
-        // URL parsing failed, host remains undefined
+        // URL parsing failed
       }
     }
   }
-
-  // Default to unknown if still no host
   if (!host) {
     host = "unknown";
   }
+
+  // Strip port for domain check (e.g. "eshop.tarch.ca:443" -> "eshop.tarch.ca")
+  const hostname = typeof host === "string" && host.includes(":") ? host.split(":")[0] : host;
 
   try {
     const { getInstance } = require("../config/TrafficConfigManager");
@@ -61,21 +80,15 @@ function isMonitoredApp(req) {
       return false;
     }
 
-    // Check 1: User-Agent must match monitor pattern
-    const trafficConfig = configManager.getTrafficConfig();
-    const pattern = trafficConfig?.monitor?.pattern;
-    if (!pattern) return false;
-
-    const regex = new RegExp(pattern);
-    if (!regex.test(userAgent)) {
+    // Check 1: Request must match monitor config (e.g. header "host" with pattern, or query param)
+    const queryParams = _getQueryParamsFromReq(req);
+    if (!configManager.isMonitoredRequest(headers, queryParams)) {
       return false;
     }
 
     // Check 2: Domain must be in monitored domains list
-    const isMonitoredDomain = configManager.isMonitoredDomain(host);
-    return isMonitoredDomain;
+    return configManager.isMonitoredDomain(hostname);
   } catch (e) {
-    // Fallback: return false if config check fails
     return false;
   }
 }
