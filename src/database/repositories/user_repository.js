@@ -42,7 +42,7 @@ function createUser(userIdentifier, partyId = null, clientId = null, email = nul
 
     const result = stmt.run(userIdentifier, partyId, clientId, email, firstName, lastName, now, now);
 
-    logger.info(`User created: ${userIdentifier} (ID: ${result.lastInsertRowid})`);
+    logger.debug(`User created: ${userIdentifier} (ID: ${result.lastInsertRowid})`);
 
     return getUserById(result.lastInsertRowid);
   } catch (error) {

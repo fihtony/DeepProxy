@@ -81,7 +81,7 @@ function createSessionAndCookie(userId, headers, logPrefix = "[SESSION_MANAGER]"
       domains,
       cookieCount: cookieHeaders.length,
       expirySeconds,
-      cookieHeaderSample: cookieHeaders[0] ? cookieHeaders[0].substring(0, 80) + "..." : "NO COOKIES",
+      cookie: cookieHeaders[0] ? cookieHeaders[0].substring(0, 80) + "..." : "NO COOKIES",
     });
 
     return {
@@ -274,7 +274,7 @@ function getOrCreateUser(userIdentifier, logPrefix = "[SESSION_MANAGER]") {
     let user = userRepository.getUserByIdentifier(userIdentifier);
 
     if (user) {
-      logger.info(`${logPrefix} User found in database`, {
+      logger.debug(`${logPrefix} User found in database`, {
         userIdentifier,
         userId: user.id,
       });
@@ -282,7 +282,7 @@ function getOrCreateUser(userIdentifier, logPrefix = "[SESSION_MANAGER]") {
     }
 
     user = userRepository.createUser(userIdentifier);
-    logger.info(`${logPrefix} New user created`, {
+    logger.debug(`${logPrefix} New user created`, {
       userIdentifier,
       userId: user.id,
     });

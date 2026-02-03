@@ -259,9 +259,35 @@ class SessionConfigManager {
       let rawValue = null;
 
       switch (source.toLowerCase()) {
-        case "body":
-          rawValue = this._getNestedValue(current.body, key);
+        case "body": {
+          let body = current.body;
+          // HTTPS-intercepted requests may have body as Buffer; parse to object for key lookup
+          if (Buffer.isBuffer(body)) {
+            const contentType = (current.headers && current.headers["content-type"]) || "";
+            if (contentType.includes("application/json") && body.length > 0) {
+              try {
+                body = JSON.parse(body.toString("utf8"));
+              } catch (e) {
+                body = null;
+              }
+            } else {
+              body = null;
+            }
+          } else if (typeof body === "string" && body.trim()) {
+            const contentType = (current.headers && current.headers["content-type"]) || "";
+            if (contentType.includes("application/json")) {
+              try {
+                body = JSON.parse(body);
+              } catch (e) {
+                body = null;
+              }
+            } else {
+              body = null;
+            }
+          }
+          rawValue = this._getNestedValue(body, key);
           break;
+        }
 
         case "header":
           // Headers are case-insensitive
