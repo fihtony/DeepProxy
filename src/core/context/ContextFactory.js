@@ -15,6 +15,7 @@
 
 const RequestContext = require("./RequestContext");
 const ResponseContext = require("./ResponseContext");
+const { decompressResponseBody } = require("../../utils/bodySerializer");
 
 class ContextFactory {
   /**
@@ -58,15 +59,29 @@ class ContextFactory {
 
   /**
    * Create ResponseContext from backend HTTP response
-   * @param {Object} response - HTTP response object (from axios, etc.)
+   * Decompresses gzip/deflate/br body so stored response is plain JSON/text for DB and display.
+   * @param {Object} response - HTTP response object (status, headers, data)
    * @returns {ResponseContext} Response context instance
    */
   static createResponseContextFromHttp(response) {
+    let body = response.data;
+    let headers = response.headers ? { ...response.headers } : {};
+
+    const contentEncoding = headers["content-encoding"];
+    if (Buffer.isBuffer(body) && body.length > 0 && contentEncoding) {
+      const decompressed = decompressResponseBody(body, contentEncoding);
+      if (decompressed) {
+        body = decompressed;
+        delete headers["content-encoding"];
+        headers["content-length"] = String(decompressed.length);
+      }
+    }
+
     return new ResponseContext({
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
-      body: response.data,
+      headers,
+      body,
       source: "backend",
     });
   }

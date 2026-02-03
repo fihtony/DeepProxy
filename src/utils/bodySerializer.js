@@ -3,7 +3,37 @@
  *
  * Common functions for serializing request/response bodies
  * Handles Buffer, Object, and String types correctly
+ * Decompresses gzip/deflate/br response bodies for storage/display
  */
+
+const zlib = require("zlib");
+
+/**
+ * Decompress response body when Content-Encoding is gzip, deflate, or br
+ * @param {Buffer} buffer - Raw response body buffer
+ * @param {string} contentEncoding - Value of Content-Encoding header (e.g. 'gzip', 'deflate', 'br')
+ * @returns {Buffer|null} Decompressed buffer or null on failure
+ */
+function decompressResponseBody(buffer, contentEncoding) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0 || !contentEncoding) {
+    return buffer;
+  }
+  const encoding = String(contentEncoding).trim().toLowerCase();
+  try {
+    if (encoding === "gzip" || encoding === "gunzip") {
+      return zlib.gunzipSync(buffer);
+    }
+    if (encoding === "deflate") {
+      return zlib.inflateSync(buffer);
+    }
+    if (encoding === "br") {
+      return zlib.brotliDecompressSync(buffer);
+    }
+  } catch (e) {
+    return buffer;
+  }
+  return buffer;
+}
 
 /**
  * Serialize body to JSON string for database storage
@@ -67,4 +97,5 @@ function serializeBody(body) {
 
 module.exports = {
   serializeBody,
+  decompressResponseBody,
 };
