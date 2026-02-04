@@ -31,24 +31,69 @@ const JWT_SECRET = "dproxy-fake-jwt-secret-key-for-replay-mode";
 const JWT_EXPIRY_HOURS = 1;
 
 /**
+ * Parse query params from request URL for mapping extraction
+ * @param {string} requestUrl - Full URL or path with query
+ * @returns {Object} Query params object (key -> value)
+ */
+function _getQueryParamsFromUrl(requestUrl) {
+  if (!requestUrl || typeof requestUrl !== "string") return {};
+  try {
+    const hasProtocol = requestUrl.startsWith("http://") || requestUrl.startsWith("https://");
+    const urlStr = hasProtocol ? requestUrl : `http://_/${requestUrl}`;
+    const urlObj = new URL(urlStr);
+    const params = {};
+    urlObj.searchParams.forEach((value, key) => {
+      params[key] = value;
+    });
+    return params;
+  } catch (e) {
+    return {};
+  }
+}
+
+/**
  * Create session and DPSESSION cookie
  * @param {number} userId - User ID (database primary key)
  * @param {Object} headers - Request headers
  * @param {string} logPrefix - Log prefix for tracking (e.g., "[RECORDING_MODE]" or "[REPLAY_MODE]")
+ * @param {string} requestUrl - Optional request URL for query param extraction (same mapping as api_requests)
  * @returns {Object|null} { session, cookieHeader } or null
  */
-function createSessionAndCookie(userId, headers, logPrefix = "[SESSION_MANAGER]") {
+function createSessionAndCookie(userId, headers, logPrefix = "[SESSION_MANAGER]", requestUrl = "") {
   try {
     // Generate session token
     const sessionToken = crypto.randomUUID();
 
-    // Extract request headers
-    const requestHeaders = {
-      platform: headers["mobile-platform"] || null,
-      version: headers["mobile-version"] || null,
-      environment: headers["mobile-environment"] || null,
-      language: headers["accept-language"] || null,
-    };
+    // Extract app_platform, app_version, app_environment, app_language using same mapping as api_requests (config type=mapping)
+    let requestHeaders = { platform: null, version: null, environment: null, language: null };
+    try {
+      const { getInstance } = require("../config/TrafficConfigManager");
+      const configManager = getInstance();
+      if (configManager && configManager.isInitialized()) {
+        const queryParams = _getQueryParamsFromUrl(requestUrl);
+        const mapped = configManager.extractAllMappedValues(headers || {}, queryParams);
+        requestHeaders = {
+          platform: mapped.app_platform || null,
+          version: mapped.app_version || null,
+          environment: mapped.app_environment || null,
+          language: mapped.app_language || null,
+        };
+      } else {
+        requestHeaders = {
+          platform: headers["mobile-platform"] || null,
+          version: headers["mobile-version"] || null,
+          environment: headers["mobile-environment"] || null,
+          language: headers["accept-language"] || null,
+        };
+      }
+    } catch (e) {
+      requestHeaders = {
+        platform: headers["mobile-platform"] || null,
+        version: headers["mobile-version"] || null,
+        environment: headers["mobile-environment"] || null,
+        language: headers["accept-language"] || null,
+      };
+    }
 
     // Calculate expiry time using session config if available
     const sessionConfigManager = getSessionConfigManager();

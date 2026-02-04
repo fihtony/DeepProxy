@@ -235,7 +235,8 @@ class ReplayMode extends ModeHandler {
 
       // For config-matching endpoints, create session and add DPSESSION cookie
       if (requestContext.getMetadata("createSession") && userId) {
-        const sessionResult = sessionManager.createSessionAndCookie(userId, current.headers, "[REPLAY_MODE]");
+        const requestUrl = current.originalUrl || current.url || "";
+        const sessionResult = sessionManager.createSessionAndCookie(userId, current.headers, "[REPLAY_MODE]", requestUrl);
         if (sessionResult) {
           // Add all DPSESSION cookies to response (for multiple domains)
           const existingSetCookie = responseContext.getHeader("set-cookie");

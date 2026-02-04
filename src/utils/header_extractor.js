@@ -93,7 +93,7 @@ function normalizeEnvironment(environment) {
   // Map variations to standard values
   const envMap = {
     sit: "sit",
-    uat: "sit",
+    uat: "uat",
     stage: "stage",
     staging: "stage",
     dev: "dev",

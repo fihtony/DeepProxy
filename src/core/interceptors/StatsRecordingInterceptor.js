@@ -75,11 +75,12 @@ class StatsRecordingInterceptor extends ResponseInterceptor {
         return context;
       }
 
-      // Extract relevant information; prefer request metadata (set by RequestInterceptor), then headers; use "" to avoid null in DB
+      // Extract relevant information; prefer request metadata (set by RequestInterceptor from config type=mapping), then headers; use "" to avoid null in DB
       const method = request.method || "GET";
       const appPlatform = requestMetadata.appPlatform ?? headers["mobile-platform"] ?? "";
       const appVersion = requestMetadata.appVersion ?? headers["mobile-version"] ?? "";
       const appEnvironment = requestMetadata.appEnvironment ?? headers["mobile-environment"] ?? "";
+      const appLanguage = requestMetadata.appLanguage ?? headers["accept-language"] ?? "";
       const duration = responseMetadata.latency || 0;
 
       // Extract original request URL
@@ -127,6 +128,7 @@ class StatsRecordingInterceptor extends ResponseInterceptor {
           appPlatform,
           appVersion,
           appEnvironment,
+          appLanguage,
           responseStatus: status,
           responseLength,
           latencyMs: duration,
@@ -298,12 +300,24 @@ class StatsRecordingInterceptor extends ResponseInterceptor {
    */
   async recordStat(statData) {
     try {
-      const { host, endpointPath, method, appPlatform, appVersion, appEnvironment, responseStatus, responseLength, latencyMs } = statData;
+      const {
+        host,
+        endpointPath,
+        method,
+        appPlatform,
+        appVersion,
+        appEnvironment,
+        appLanguage,
+        responseStatus,
+        responseLength,
+        latencyMs,
+      } = statData;
 
       // Use empty string instead of null to avoid database search issues when not configured
       const normalizedPlatform = appPlatform === "" || appPlatform == null ? "" : appPlatform;
       const normalizedVersion = appVersion === "" || appVersion == null ? "" : appVersion;
       const normalizedEnvironment = appEnvironment === "" || appEnvironment == null ? "" : appEnvironment;
+      const normalizedLanguage = appLanguage === "" || appLanguage == null ? "" : appLanguage;
 
       const dbConnection = require("../../database/connection");
       const db = dbConnection.getDatabase();
@@ -318,11 +332,12 @@ class StatsRecordingInterceptor extends ResponseInterceptor {
           app_platform,
           app_version,
           app_environment,
+          app_language,
           response_status,
           response_length,
           latency_ms,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         host,
         endpointPath,
@@ -330,6 +345,7 @@ class StatsRecordingInterceptor extends ResponseInterceptor {
         normalizedPlatform,
         normalizedVersion,
         normalizedEnvironment,
+        normalizedLanguage,
         responseStatus,
         responseLength,
         latencyMs || null,
@@ -343,6 +359,7 @@ class StatsRecordingInterceptor extends ResponseInterceptor {
         platform: normalizedPlatform,
         version: normalizedVersion,
         environment: normalizedEnvironment,
+        language: normalizedLanguage,
         status: responseStatus,
         responseLength,
         latency: latencyMs,

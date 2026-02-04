@@ -21,6 +21,7 @@ class StatsRepository {
    * @param {string} method - HTTP method (GET, POST, PUT, DELETE, PATCH)
    * @param {string} host - Request host
    * @param {string} appVersion - App version
+   * @param {string} appLanguage - App language (e.g. en, fr)
    */
   recordRequest(
     endpointPath,
@@ -31,7 +32,8 @@ class StatsRepository {
     latencyMs,
     method = "GET",
     host = "unknown",
-    appVersion = "unknown"
+    appVersion = "unknown",
+    appLanguage = ""
   ) {
     try {
       const database = db.getDatabase();
@@ -44,14 +46,27 @@ class StatsRepository {
           app_platform,
           app_version,
           app_environment,
+          app_language,
           response_status,
           response_length,
           latency_ms,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      stmt.run(host, endpointPath, method, appPlatform, appVersion, appEnvironment, responseStatus, responseLength, latencyMs, createdAt);
+      stmt.run(
+        host,
+        endpointPath,
+        method,
+        appPlatform,
+        appVersion,
+        appEnvironment,
+        appLanguage || "",
+        responseStatus,
+        responseLength,
+        latencyMs,
+        createdAt
+      );
     } catch (error) {
       logger.error("Failed to record request statistics:", error);
       // Don't throw - stats recording should not break main flow
