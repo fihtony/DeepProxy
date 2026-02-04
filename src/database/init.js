@@ -18,6 +18,9 @@ async function initializeDatabase() {
     // Run schema
     db.runSchema();
 
+    // Run migrations for existing databases (e.g. add new columns)
+    db.runMigrations();
+
     // Get statistics
     const stats = db.getStats();
     logger.info("Database initialized successfully", stats);

@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS api_requests (
     request_headers TEXT NOT NULL,         -- JSON serialized
     request_body TEXT,                     -- JSON serialized
     app_platform TEXT,                     -- android, ios, etc
-    app_version TEXT,                      -- App version (e.g., 6.9.0)
+    app_version TEXT,                      -- App version (e.g., 1.0.0)
     app_environment TEXT,                  -- sit, stage, dev, prod, etc
     app_language TEXT,                     -- en, fr, etc
     correlation_id TEXT,                   -- x-correlation-id header for tracing
@@ -205,8 +205,9 @@ CREATE TABLE IF NOT EXISTS stats (
     endpoint_path TEXT NOT NULL,           -- e.g., /pub/services/checkversion (no query params)
     method TEXT NOT NULL CHECK(method IN ('GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD', 'CONNECT')),
     app_platform TEXT,                  -- android, ios
-    app_version TEXT,                   -- e.g., 6.9.0
+    app_version TEXT,                   -- e.g., 1.0.0
     app_environment TEXT,               -- sit, stage, dev, prod
+    app_language TEXT,                  -- en, fr, etc
     response_status INTEGER NOT NULL,
     response_length INTEGER NOT NULL,   -- response content length
     latency_ms INTEGER,                 -- Response time in milliseconds
@@ -218,9 +219,10 @@ CREATE INDEX IF NOT EXISTS idx_stats_endpoint ON stats(endpoint_path);
 CREATE INDEX IF NOT EXISTS idx_stats_method ON stats(method);
 CREATE INDEX IF NOT EXISTS idx_stats_platform ON stats(app_platform);
 CREATE INDEX IF NOT EXISTS idx_stats_environment ON stats(app_environment);
+CREATE INDEX IF NOT EXISTS idx_stats_language ON stats(app_language);
 CREATE INDEX IF NOT EXISTS idx_stats_status ON stats(response_status);
 CREATE INDEX IF NOT EXISTS idx_stats_created_at ON stats(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_stats_composite ON stats(host, endpoint_path, method, app_platform, app_environment, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stats_composite ON stats(host, endpoint_path, method, app_platform, app_environment, app_language, created_at DESC);
 
 -- ============================================================================
 -- ENDPOINT_MATCHING_CONFIG TABLE

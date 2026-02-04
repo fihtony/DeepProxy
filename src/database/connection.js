@@ -64,6 +64,9 @@ class DatabaseConnection {
       this.isInitialized = true;
       logger.info(`Database connected: ${dbPath}`);
 
+      // Run migrations for existing databases (e.g. add new columns)
+      this.runMigrations();
+
       return this.db;
     } catch (error) {
       logger.error("Failed to initialize database:", error);
@@ -112,6 +115,31 @@ class DatabaseConnection {
       logger.info("Database schema initialized successfully");
     } catch (error) {
       logger.error("Failed to run database schema:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Run migrations for existing databases (e.g. add new columns)
+   */
+  runMigrations() {
+    try {
+      const db = this.getDatabase();
+
+      // Migration: add app_language to stats table if missing
+      try {
+        const tableInfo = db.prepare("PRAGMA table_info(stats)").all();
+        const hasAppLanguage = tableInfo.some((col) => col.name === "app_language");
+        if (!hasAppLanguage) {
+          db.prepare("ALTER TABLE stats ADD COLUMN app_language TEXT").run();
+          logger.info("Migration: added app_language column to stats table");
+        }
+      } catch (e) {
+        // stats table may not exist yet (fresh install)
+        logger.debug("Migration stats.app_language skipped:", e.message);
+      }
+    } catch (error) {
+      logger.error("Failed to run migrations:", error);
       throw error;
     }
   }

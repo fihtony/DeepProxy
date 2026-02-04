@@ -191,7 +191,8 @@ class RecordingMode extends ModeHandler {
           if (user) {
             // Create new session and DPSESSION cookie (never reuse existing session for create-rule endpoints)
             const headers = current.headers || {};
-            const sessionResult = sessionManager.createSessionAndCookie(user.id, headers, "[RECORDING_MODE]");
+            const requestUrl = current.originalUrl || current.url || "";
+            const sessionResult = sessionManager.createSessionAndCookie(user.id, headers, "[RECORDING_MODE]", requestUrl);
             if (sessionResult) {
               // Add only the new session's DPSESSION cookies (no lookup of existing session)
               const existingCookies = responseContext.getHeader("set-cookie") || [];

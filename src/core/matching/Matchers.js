@@ -256,7 +256,7 @@ class EnvironmentMatcher extends BaseMatcher {
     // Environment aliases
     this.aliases = {
       development: ["dev", "develop", "development", "local"],
-      staging: ["stage", "staging", "uat", "test"],
+      staging: ["stage", "staging", "uat", "test", "sit"],
       production: ["prod", "production", "live"],
     };
   }

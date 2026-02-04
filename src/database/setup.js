@@ -20,6 +20,9 @@ try {
   const sqliteDb = db.getDatabase();
   sqliteDb.exec(schema);
 
+  // Run migrations for existing databases
+  db.runMigrations();
+
   console.log("✓ Database initialized successfully");
   console.log("  Tables created: users, sessions, and related indexes");
 
