@@ -346,7 +346,7 @@ function PublicServices() {
                 value={filters.version}
                 onChange={handleFilterChange}
                 onKeyDown={handleFilterKeyDown}
-                placeholder="e.g., 6.9.0"
+                placeholder="e.g., 1.0.0"
                 size="small"
                 InputLabelProps={{ shrink: true }}
                 inputProps={{

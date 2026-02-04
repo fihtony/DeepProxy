@@ -361,7 +361,7 @@ function SecureServices() {
                 value={filters.user_id}
                 onChange={handleFilterChange}
                 onKeyDown={handleFilterKeyDown}
-                placeholder="e.g., 160123456789"
+                placeholder="e.g., user1"
                 size="small"
                 InputLabelProps={{ shrink: true }}
                 inputProps={{
@@ -378,7 +378,7 @@ function SecureServices() {
                 value={filters.version}
                 onChange={handleFilterChange}
                 onKeyDown={handleFilterKeyDown}
-                placeholder="e.g., 6.9.0"
+                placeholder="e.g., 1.0.0"
                 size="small"
                 InputLabelProps={{ shrink: true }}
                 inputProps={{

@@ -180,27 +180,26 @@ class RecordingMode extends ModeHandler {
       // By this point, userId has been extracted and attached to requestContext (if applicable)
       // Session cookies, token tracking, and other DProxy modifications will be applied
       // to the response returned to the client, but NOT saved to the database
-      await this._saveRequestAndResponse(processedRequest, responseContext, duration);
+      await this._saveRequestAndResponse(processedRequest, responseContext, duration, { shouldCreate });
 
       // Now create session and add cookies if needed (after database save)
+      // For "create" rule endpoints (e.g. /api/auth/login): create NEW session only, do not look up existing session
       if (shouldCreate) {
         const extractedUserId = sessionManager.extractUserIdFromRequest(requestContext, "[RECORDING_MODE]");
         if (extractedUserId) {
           const user = sessionManager.getOrCreateUser(extractedUserId, "[RECORDING_MODE]");
           if (user) {
-            // Create DPSESSION cookie
+            // Create new session and DPSESSION cookie (never reuse existing session for create-rule endpoints)
             const headers = current.headers || {};
             const sessionResult = sessionManager.createSessionAndCookie(user.id, headers, "[RECORDING_MODE]");
             if (sessionResult) {
-              // Add all DPSESSION cookies to response (for multiple domains)
+              // Add only the new session's DPSESSION cookies (no lookup of existing session)
               const existingCookies = responseContext.getHeader("set-cookie") || [];
               const cookieArray = Array.isArray(existingCookies) ? [...existingCookies] : existingCookies ? [existingCookies] : [];
 
-              // Add all cookie headers for different domains
               if (sessionResult.cookieHeaders && Array.isArray(sessionResult.cookieHeaders)) {
                 cookieArray.push(...sessionResult.cookieHeaders);
               } else if (sessionResult.cookieHeader) {
-                // Backward compatibility: if only single cookie header exists
                 cookieArray.push(sessionResult.cookieHeader);
               }
 
@@ -212,14 +211,31 @@ class RecordingMode extends ModeHandler {
                 cookieCount: sessionResult.cookieHeaders?.length || 1,
                 totalCookies: cookieArray.length,
               });
+
+              // Apply "update" rules to the newly created session (e.g. body.access_token -> oauth_token in sessions table)
+              const updateResult = sessionManager.processSessionUpdates(
+                sessionResult.session,
+                responseContext,
+                requestContext,
+                "[RECORDING_MODE]"
+              );
+              if (updateResult.cookieUpdates > 0 || updateResult.authUpdates > 0) {
+                logger.info("[RECORDING_MODE] New session updated with response tokens", {
+                  sessionId: sessionResult.session.id,
+                  cookieUpdates: updateResult.cookieUpdates,
+                  authUpdates: updateResult.authUpdates,
+                });
+              }
             }
           }
         }
       }
 
-      // Process User Session and JWT token for cross-domain tracking
-      // These modifications apply to the response returned to client but not to saved database record
-      await this._processTokenTracking(requestContext, responseContext);
+      // Process User Session and JWT token for cross-domain tracking (lookup by request cookie)
+      // Skip when shouldCreate: we already created a new session and applied update rules to it above
+      if (!shouldCreate) {
+        await this._processTokenTracking(requestContext, responseContext);
+      }
 
       logger.info("Recording mode: Request completed", {
         duration,
@@ -268,10 +284,11 @@ class RecordingMode extends ModeHandler {
    * Uses secureRequestRepository or publicRequestRepository based on endpoint type
    * @private
    */
-  async _saveRequestAndResponse(requestContext, responseContext, duration) {
+  async _saveRequestAndResponse(requestContext, responseContext, duration, options = {}) {
     const current = requestContext.getCurrent();
     const original = requestContext.getOriginal();
     const userId = requestContext.getMetadata("userId");
+    const shouldCreate = options.shouldCreate === true;
     const headers = current.headers || {};
 
     // All requests reaching here are monitored (verified by RequestTypeDetector)
@@ -389,9 +406,11 @@ class RecordingMode extends ModeHandler {
         if (!finalUserId) {
           // Save the response even without userId, log a warning message
           logger.warn("Secure endpoint without userId from any auth method", { endpointPath });
-        } else {
+        } else if (!shouldCreate) {
           // If user_id found and this is a cross-domain request (no DPSESSION in request),
-          // add DPSESSION cookie for this domain so future requests will include it
+          // add DPSESSION cookie for this domain so future requests will include it.
+          // Skip when shouldCreate: this request matches a "create" rule (e.g. /api/auth/login);
+          // we must not look up existing session - a new session will be created and added in the create block.
           sessionManager.addCrossDomainDPSessionCookie(responseContext, headers, host, finalUserId, "[RECORDING_MODE]");
         }
 
