@@ -25,8 +25,10 @@ import {
   FormControlLabel,
   Checkbox,
   IconButton,
+  InputAdornment,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import ClearIcon from "@mui/icons-material/Clear";
 import { getSecureServices, getSecureServiceDetail } from "../services/api";
 import { getEndpointTypeTag } from "../utils/endpointTagUtils";
 import { compareVersions } from "../utils/versionComparison";
@@ -34,6 +36,7 @@ import MethodTag from "../components/MethodTag";
 import JsonDisplay from "../components/JsonDisplay";
 import SectionWithCopy from "../components/SectionWithCopy";
 import { getDisplayType } from "../utils/endpointTypeUtils";
+import { getFilterOptionsFromServices } from "../utils/filterOptions";
 
 const COLORS = {
   success: "#4CAF50",
@@ -53,7 +56,7 @@ function SecureServices() {
   // Get endpoint config from Redux to apply tags
   const endpointConfig = useSelector((state) => state.config?.endpointConfig);
 
-  // Filter states
+  // Filter states (platform/language/environment: "" = ALL, default)
   const [filters, setFilters] = useState({
     endpoint: "",
     user_id: "",
@@ -189,6 +192,9 @@ function SecureServices() {
     });
     return latestMap;
   };
+
+  // Derive platform/language/environment filter options from list response (distinct app_platform, app_language, app_environment)
+  const filterOptions = useMemo(() => getFilterOptionsFromServices(services), [services]);
 
   // Filter services based on endpoint name
   const endpointFilteredServices = useMemo(() => {
@@ -347,8 +353,24 @@ function SecureServices() {
                 placeholder="Filter by endpoint"
                 size="small"
                 InputLabelProps={{ shrink: true }}
-                inputProps={{
-                  style: filters.endpoint ? { backgroundColor: "#fff3cd" } : {},
+                InputProps={{
+                  endAdornment: filters.endpoint ? (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setFilters((prev) => ({ ...prev, endpoint: "" }));
+                          setCurrentPage(1);
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        edge="end"
+                        aria-label="Clear endpoint"
+                        sx={{ padding: "4px", color: "action.disabled" }}
+                      >
+                        <ClearIcon sx={{ fontSize: "1rem" }} />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : null,
                 }}
                 sx={{ "& .MuiInputBase-input": { fontSize: "0.85rem" }, "& .MuiInputLabel-root": { fontSize: "0.85rem" } }}
               />
@@ -364,8 +386,24 @@ function SecureServices() {
                 placeholder="e.g., user1"
                 size="small"
                 InputLabelProps={{ shrink: true }}
-                inputProps={{
-                  style: filters.user_id ? { backgroundColor: "#fff3cd" } : {},
+                InputProps={{
+                  endAdornment: filters.user_id ? (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setFilters((prev) => ({ ...prev, user_id: "" }));
+                          setCurrentPage(1);
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        edge="end"
+                        aria-label="Clear user ID"
+                        sx={{ padding: "4px", color: "action.disabled" }}
+                      >
+                        <ClearIcon sx={{ fontSize: "1rem" }} />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : null,
                 }}
                 sx={{ "& .MuiInputBase-input": { fontSize: "0.85rem" }, "& .MuiInputLabel-root": { fontSize: "0.85rem" } }}
               />
@@ -381,8 +419,24 @@ function SecureServices() {
                 placeholder="e.g., 1.0.0"
                 size="small"
                 InputLabelProps={{ shrink: true }}
-                inputProps={{
-                  style: filters.version ? { backgroundColor: "#fff3cd" } : {},
+                InputProps={{
+                  endAdornment: filters.version ? (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setFilters((prev) => ({ ...prev, version: "" }));
+                          setCurrentPage(1);
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        edge="end"
+                        aria-label="Clear version"
+                        sx={{ padding: "4px", color: "action.disabled" }}
+                      >
+                        <ClearIcon sx={{ fontSize: "1rem" }} />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : null,
                 }}
                 sx={{ "& .MuiInputBase-input": { fontSize: "0.85rem" }, "& .MuiInputLabel-root": { fontSize: "0.85rem" } }}
               />
@@ -402,9 +456,11 @@ function SecureServices() {
                 InputLabelProps={{ shrink: true }}
                 sx={{ "& .MuiInputBase-input": { fontSize: "0.85rem" }, "& .MuiInputLabel-root": { fontSize: "0.85rem" } }}
               >
-                <option value="">ALL</option>
-                <option value="android">Android</option>
-                <option value="ios">iOS</option>
+                {filterOptions.platformOptions.map((opt) => (
+                  <option key={opt.value || "all"} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </TextField>
             </Grid>
             <Grid item xs={12} sm={6} md={1.5}>
@@ -422,9 +478,11 @@ function SecureServices() {
                 InputLabelProps={{ shrink: true }}
                 sx={{ "& .MuiInputBase-input": { fontSize: "0.85rem" }, "& .MuiInputLabel-root": { fontSize: "0.85rem" } }}
               >
-                <option value="">ALL</option>
-                <option value="en">English</option>
-                <option value="fr">French</option>
+                {filterOptions.languageOptions.map((opt) => (
+                  <option key={opt.value || "all"} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </TextField>
             </Grid>
             <Grid item xs={12} sm={6} md={1.5}>
@@ -442,10 +500,11 @@ function SecureServices() {
                 InputLabelProps={{ shrink: true }}
                 sx={{ "& .MuiInputBase-input": { fontSize: "0.85rem" }, "& .MuiInputLabel-root": { fontSize: "0.85rem" } }}
               >
-                <option value="">ALL</option>
-                <option value="sit">SIT</option>
-                <option value="stage">Stage</option>
-                <option value="prod">Prod</option>
+                {filterOptions.environmentOptions.map((opt) => (
+                  <option key={opt.value || "all"} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </TextField>
             </Grid>
             <Grid item xs={12} md="auto" sx={{ display: "flex", gap: 0.5, justifyContent: "flex-end", alignItems: "center", ml: "auto" }}>
