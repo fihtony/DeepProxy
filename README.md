@@ -144,6 +144,6 @@ web/
 
 ## License
 
-Copyright (c) 2026 Tony Xu <fihtony@gmail.com>
+Copyright (c) 2026 Tony Xu <tony@tarch.ca>
 
 Licensed under the MIT License. See [LICENSE](LICENSE) file for details.

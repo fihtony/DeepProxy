@@ -37,7 +37,7 @@
     "replay",
     "testing"
   ],
-  "author": "Tony XU <fihtony@gmail.com>",
+  "author": "Tony XU <tony@tarch.ca>",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.13.2",
