@@ -54,6 +54,7 @@ certs/
 # Tests
 tests/
 docs/
+!docs/images/
 
 # Backups
 backups/

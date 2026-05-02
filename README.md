@@ -1,16 +1,33 @@
 # Deep Proxy - a HTTP Proxy
 
-A lightweight HTTP proxy system for mobile application development and testing. Sits between mobile apps and backend servers with three operational modes: **Recording** (cache responses), **Replay** (return cached), and **Passthrough** (forward only).
+Deep Proxy is a practical HTTP proxy for mobile app development, testing, and debugging. It helps teams capture real API traffic, replay it with confidence, and keep testing smooth even when backend services are changing or unavailable.
+
+It is built for real-world mobile app workflows: user-specific responses, smarter replay matching, automatic response updates, and a browser-based dashboard that makes the whole experience easier to manage.
+
+The biggest advantage is the Web UI Console. Instead of juggling config files and manual steps, you can manage sessions, review traffic, tune matching rules, and switch modes from one place.
+
+## Why It Stands Out
+
+- **User-aware replay**: Deep Proxy can capture request and response data by user session, so replay mode can return the right response for the right user.
+- **Smarter fuzzy matching**: It can match by user ID, app version, platform, environment, language, namespace, and more, so replay feels more natural for the client app.
+- **Always current during recording**: When a new response arrives, recording mode can update the latest response automatically, helping your cache stay fresh.
+- **Flexible configuration**: Monitoring hosts, authentication, data mapping, and extraction rules are configurable, making it easier to support different backend services.
 
 ## Quick Features
 
-- 🔴 **Recording Mode**: Forward requests to real servers, cache successful responses
-- ▶️ **Replay Mode**: Return cached responses without calling backend (offline development)
-- ➡️ **Passthrough Mode**: Forward all requests without caching
-- **Smart Session Management**: Automatic user session and OAuth token handling
-- **Web UI Dashboard**: Manage cache, view statistics, configure endpoints (http://localhost:3080)
-- **Database-Driven Config**: All settings managed via Web UI, not configuration files
-- **Security**: AES-256-GCM encryption, API key authentication, rate limiting
+- 🔴 **Recording Mode**: Capture real requests and automatically keep the latest response up to date, so the recorded data stays useful instead of going stale.
+- ▶️ **Replay Mode**: Serve cached responses instantly, with user-aware and fuzzy matching that helps the app receive a response that fits the current session and context.
+- ➡️ **Passthrough Mode**: Forward requests directly when you want to talk to the live backend with no caching in the way.
+- **Smart Session Management**: Track user sessions and tokens across requests, so the same user can get consistent responses across the app.
+- **Web UI Dashboard**: The key feature of Deep Proxy. Review traffic, manage cache, refine matching rules, and control the proxy from a clean browser-based interface.
+- **Database-Driven Config**: Keep the important rules in the app instead of scattered config files, so setup and maintenance stay simple.
+- **Security**: Basic protections like API key auth, encryption, and rate limiting help keep proxy usage safer for teams.
+
+## Dashboard Preview
+
+<img src="docs/images/dashboard.png" alt="Deep Proxy dashboard" width="1000" />
+
+The dashboard gives you a quick visual overview of the proxy experience. It is designed to make everyday actions like checking traffic, managing cache, and switching modes feel simple, fast, and convenient.
 
 ## Installation
 
@@ -114,14 +131,14 @@ curl -X POST http://localhost:8080/admin/mode \
 
 **Most settings are now database-driven** and managed via the Web UI:
 
-- Traffic monitoring rules (which endpoints to cache)
-- Field mapping (extract metadata from headers/responses)
-- Session creation rules (where to capture user IDs)
-- Endpoint matching patterns
+- Traffic monitoring rules for deciding which requests to record and replay
+- Field mapping and extraction for capturing useful data from headers, bodies, and responses
+- Session creation rules for linking requests to the right user
+- Endpoint matching patterns for version, platform, language, environment, and namespace-aware replay
 
 Only essential infrastructure settings are in `.env`:
 
-- Server ports and host
+- Server host and ports
 - Database location
 - Security keys
 - Logging configuration
