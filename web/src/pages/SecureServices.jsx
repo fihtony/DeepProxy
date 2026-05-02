@@ -329,7 +329,7 @@ function SecureServices() {
         🔒 Secure Services
       </Typography>
       <Typography variant="caption" color="textSecondary">
-        (Includes Transmit/Authentication Endpoints)
+        (Includes Authentication Endpoints)
       </Typography>
 
       {error && (

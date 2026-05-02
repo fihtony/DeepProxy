@@ -23,11 +23,42 @@ The biggest advantage is the Web UI Console. Instead of juggling config files an
 - **Database-Driven Config**: Keep the important rules in the app instead of scattered config files, so setup and maintenance stay simple.
 - **Security**: Basic protections like API key auth, encryption, and rate limiting help keep proxy usage safer for teams.
 
-## Dashboard Preview
+## Dashboard
 
 <img src="docs/images/dashboard.png" alt="Deep Proxy dashboard" width="1000" />
 
 The dashboard gives you a quick visual overview of the proxy experience. It is designed to make everyday actions like checking traffic, managing cache, and switching modes feel simple, fast, and convenient.
+
+## Captured Traffic Inspector
+
+<img src="docs/images/requests.png" alt="Captured traffic requests and responses" width="1000" />
+
+An inspection view for captured requests and responses, showing the full request URL, query parameters, headers, body, response status, response headers, response body, timestamp, and the matching user, app version, platform, and environment context.
+
+## Endpoint Matching Rules
+
+<img src="docs/images/matching-rules.png" alt="Endpoint matching rules" width="1000" />
+
+Flexible rules for distinguishing incoming requests by query parameters, request body fields, or header fields so related requests can be grouped by the attributes that matter most.
+
+## Traffic Filtering Settings
+
+<img src="docs/images/settings-traffic.png" alt="Traffic filtering settings" width="700" />
+
+Defines which hosts and request keywords Deep Proxy should monitor. All other traffic is passed through directly without being recorded.
+
+## Session Tracking Settings
+
+<img src="docs/images/settings-session.png" alt="Session tracking settings" width="700" />
+
+Configures when a user session should be created and how session information is extracted and updated over time.
+
+## Global Proxy Defaults
+
+<img src="docs/images/settings-defaults.png" alt="Global proxy defaults" width="700" />
+
+Provides the default global configuration for recording and replay mode, so endpoint-specific rules are only needed when a request requires special handling.
+
 
 ## Installation
 
